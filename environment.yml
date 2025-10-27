@@ -1,0 +1,19 @@
+name: parkinson_pose_env
+channels:
+  - defaults
+  - conda-forge
+
+dependencies:
+  - python=3.10
+  - pip
+  - pip:
+      - tensorflow==2.15.0
+      - mediapipe==0.10.14
+      - protobuf==4.25.3
+      - numpy==1.26.4
+      - pandas==2.3.3
+      - opencv-python==4.12.0.88
+      - matplotlib==3.9.2
+      - seaborn==0.13.2
+      - scikit-learn==1.7.2
+      - tqdm==4.66.5
