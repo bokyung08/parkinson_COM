@@ -5,6 +5,31 @@
 
 ---
 
+<<<<<<< HEAD
+=======
+## 📁 프로젝트 구조
+```
+parkinson_pose_lstm/
+│
+├── data/
+│ ├── pre_final_video/ # 원본 영상
+│ └── prefinal_preprocessed/ # Pose 추출 결과
+├── results/
+│ ├── video_outputs_pose_only/ # COM 시각화 영상
+│ ├── models/ # 저장된 모델
+│ └── plots/ # 학습 및 평가 그래프
+├── src/
+│ ├── data_preprocessing.py
+│ ├── model_builder.py
+│ ├── train_model.py
+│ ├── evaluate_model.py
+│ ├── utils.py
+│ └── init.py
+├── main.py
+└── requirements.txt
+```
+## ⚙️ 실행 방법
+>>>>>>> d2d8277fefe46063f8975cf0334de7ab5f41ce1a
 
 1. **환경 설정**
    pip install -r requirements.txt
