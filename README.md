@@ -6,7 +6,7 @@
 ---
 
 ## 📁 프로젝트 구조
-
+```
 parkinson_pose_lstm/
 │
 ├── data/
@@ -25,6 +25,7 @@ parkinson_pose_lstm/
 │ └── init.py
 ├── main.py
 └── requirements.txt
+```
 ## ⚙️ 실행 방법
 
 1. **환경 설정**
