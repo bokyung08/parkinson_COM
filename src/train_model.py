@@ -13,7 +13,7 @@ def load_data(processed_data_path):
     """ .npy 파일들을 불러와 X, y 데이터셋 생성 """
     X_data = []
     y_data = []
-    labels = {'healthy': 0, 'disease': 1}
+    labels = {'Normal': 0, 'PD': 1}
 
     for label, value in labels.items():
         class_dir = os.path.join(processed_data_path, label)
@@ -27,10 +27,10 @@ def load_data(processed_data_path):
     # 1. 시퀀스 길이 맞추기 (패딩)
     # Spatio-Temporal Transformer는 입력 시퀀스 길이가 동일해야 함
     # (일반적으로는 가장 긴 시퀀스 길이를 찾지만, 여기서는 150 프레임으로 가정)
-    max_len = 150 # 이 값은 데이터셋에 맞게 조절하세요.
+    max_len = 150
     X_padded = pad_sequences(X_data, maxlen=max_len, padding='post', dtype='float32')
-    
-    # 2. *** 차원 변경 (핵심 수정 사항) ***
+
+    # 2. *** 차원 변경 
     # (Samples, Frames, 99) -> (Samples, Frames, 33, 3)
     try:
         X_reshaped = X_padded.reshape(
@@ -60,7 +60,8 @@ def train_pose_model(processed_data_path, model_save_path):
 
     # 1. *** 모델 빌드 (핵심 수정 사항) ***
     # 모델에 2D shape가 아닌 3D shape (Frames, Nodes, Features)를 전달
-    input_shape = (X_train.shape[1], X_train.shape[2], X_train.shape[3]) 
+    input_shape = (X_train.shape[1], X_train.shape[2], X_train.shape[3]) # Transformer 
+    #input_shape = (X_train.shape[1], X_train.shape[2]) #기본 모델 
     model = build_pose_model(input_shape)
     
     model.summary()

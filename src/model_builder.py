@@ -13,6 +13,7 @@ def build_pose_model(input_shape):
     ])
     model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
     return model
+    
 # LSTM+Attention
 from tensorflow.keras.models import Model
 from tensorflow.keras.layers import Input, LSTM, Dense, Dropout, Bidirectional, Attention, Concatenate
@@ -89,7 +90,7 @@ from tensorflow.keras.layers import (
 
 
 # ----------------------------------------------------------------------
-# 🧠 Spatio-Temporal Transformer 모델 
+# Spatio-Temporal Transformer 모델 
 # ----------------------------------------------------------------------
 
 # 1. Spatial-Transformer-Block
@@ -181,9 +182,6 @@ def build_pose_model(input_shape, num_heads=4, key_dim=32, ff_dim=64, num_transf
     # 임베딩 차원을 MultiHeadAttention 헤드 수에 맞게 조정
     embed_dim = key_dim * num_heads 
     x = Dense(embed_dim)(inputs)
-    
-    # *** 오류 수정된 부분 ***
-    # 'lambda' 대신 SpatialTransformerBlock의 *인스턴스*를 생성하여 전달
     spatial_block_instance = SpatialTransformerBlock(
         num_heads=num_heads, 
         key_dim=key_dim, 
