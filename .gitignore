@@ -14,3 +14,5 @@ dataset/
 video_outputs_pose_only/
 results/ 
 logs/
+*.h5
+
