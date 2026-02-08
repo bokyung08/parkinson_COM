@@ -1,13 +1,7 @@
-# 🧠 Parkinson vs Healthy Pose Classification (LSTM 기반)
-
-본 프로젝트는 **MediaPipe Pose**를 이용해 영상에서 인체 keypoint를 추출하고, 전처리 과정을 통해 무게중심을 추출해 
-**LSTM 기반 시계열 모델**을 통해 파킨슨 환자와 정상인의 동작 패턴을 분류하는 연구입니다.
+# 🧠 COM-Anchored Spatio-Temporal Graph Modeling for Gait Severity Estimation in Parkinson’s Disease
 
 ---
 
-<<<<<<< HEAD
-=======
-## 📁 프로젝트 구조
 ```
 # Parkinson COM-Anchored Gait Severity Estimation
 
