@@ -18,3 +18,4 @@ logs/
 
 results/
 .gitignore
+unused/

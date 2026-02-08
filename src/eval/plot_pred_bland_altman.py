@@ -4,7 +4,7 @@ Quick plotting utility:
 - Bland-Altman plot
 
 Usage (example):
-python -m src.plot_pred_bland_altman --tsv results/hybrid_ablation/20260108_003809/abl_D/holdout_predictions.tsv --seconds 10 --fps 30
+python -m src.eval.plot_pred_bland_altman --tsv results/hybrid_ablation/20260108_003809/abl_D/holdout_predictions.tsv --seconds 10 --fps 30
 """
 
 import argparse
@@ -16,13 +16,11 @@ import matplotlib.pyplot as plt
 
 def load_data(tsv_path, seconds=None, fps=30.0):
     df = pd.read_csv(tsv_path, sep="\t")
-    # Optional: clip to first N seconds if time/frame info is available
     if seconds is not None:
         if "frame" in df.columns:
             df = df[df["frame"] < seconds * fps]
         elif "time" in df.columns:
             df = df[df["time"] < seconds]
-    # Assume first two numeric columns are true, pred
     y_true = df.iloc[:, 0].astype(float).to_numpy()
     y_pred = df.iloc[:, 1].astype(float).to_numpy()
     return y_true, y_pred, df

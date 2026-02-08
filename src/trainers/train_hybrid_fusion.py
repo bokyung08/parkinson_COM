@@ -16,24 +16,15 @@ from datetime import datetime
 import matplotlib.pyplot as plt
 import numpy as np
 import tensorflow as tf
-from sklearn.metrics import (
-    mean_absolute_error,
-    mean_squared_error,
-    explained_variance_score,
-    mean_absolute_percentage_error,
-    median_absolute_error,
-    r2_score,
-)
+from sklearn.metrics import mean_absolute_error, mean_squared_error
 from sklearn.model_selection import KFold
+from scipy.stats import spearmanr
 from tensorflow.keras.models import Model
 from tensorflow.keras.layers import (
     Input, Dense, Dropout, Add,
-    GlobalAveragePooling2D, GlobalAveragePooling1D,
-    Conv2D, BatchNormalization, ReLU, Layer,
-    LayerNormalization, MultiHeadAttention, Reshape
+    GlobalAveragePooling2D,
+    Conv2D, BatchNormalization, ReLU, Layer
 )
-from tensorflow.keras.initializers import Identity
-from scipy.stats import pearsonr, kendalltau
 from .train_model import load_labels  # gait UPDRS labels (items 10-14 only)
 
 
@@ -229,108 +220,6 @@ def build_hybrid_com_stgcn(
 
 
 # ============================================================
-# New Fusion v2: Adaptive GCN + Spatial Attention + Temporal Transformer
-# ============================================================
-
-class AdaptiveGCNLayer(Layer):
-    def __init__(self, out_channels, num_joints, **kwargs):
-        super().__init__(**kwargs)
-        self.out_channels = out_channels
-        self.num_joints = num_joints
-
-    def build(self, input_shape):
-        self.W = self.add_weight(
-            shape=(input_shape[-1], self.out_channels),
-            initializer="glorot_uniform",
-            trainable=True
-        )
-        self.A = self.add_weight(
-            shape=(self.num_joints, self.num_joints),
-            initializer=Identity(),
-            trainable=True
-        )
-        super().build(input_shape)
-
-    def call(self, x):
-        # x: (B, T, J, C)
-        x = tf.einsum("btjc,ck->btjk", x, self.W)
-        A = tf.nn.softmax(self.A, axis=-1)
-        return tf.einsum("ij,btjk->btik", A, x)
-
-
-class SpatialAttentionBlock(Layer):
-    def __init__(self, num_heads, key_dim, dropout=0.1, **kwargs):
-        super().__init__(**kwargs)
-        self.mha = MultiHeadAttention(num_heads=num_heads, key_dim=key_dim)
-        self.dropout = Dropout(dropout)
-        self.add = Add()
-        self.norm = LayerNormalization(epsilon=1e-6)
-
-    def call(self, x, training=False):
-        # x: (B, T, J, C)
-        B = tf.shape(x)[0]
-        T = tf.shape(x)[1]
-        J = tf.shape(x)[2]
-        C = tf.shape(x)[3]
-
-        x_flat = tf.reshape(x, (-1, J, C))  # (B*T, J, C)
-        attn = self.mha(x_flat, x_flat)
-        attn = self.dropout(attn, training=training)
-        x_flat = self.add([x_flat, attn])
-        x_flat = self.norm(x_flat)
-        return tf.reshape(x_flat, (B, T, J, C))
-
-
-def temporal_transformer_block(x, num_heads, key_dim, ff_dim, dropout=0.1):
-    attn = MultiHeadAttention(num_heads=num_heads, key_dim=key_dim)(x, x)
-    attn = Dropout(dropout)(attn)
-    x = Add()([x, attn])
-    x = LayerNormalization(epsilon=1e-6)(x)
-
-    ff = Dense(ff_dim, activation="relu")(x)
-    ff = Dense(x.shape[-1])(ff)
-    ff = Dropout(dropout)(ff)
-    x = Add()([x, ff])
-    return LayerNormalization(epsilon=1e-6)(x)
-
-
-def build_fusion_v2_model(
-    input_shape,            # (T, J, C)
-    num_joints,
-    num_heads=4,
-    key_dim=32,
-    ff_dim=128,
-    num_temporal_blocks=2,
-    optimizer="adam"
-):
-    inputs = Input(shape=input_shape)
-
-    # Adaptive GCN (spatial)
-    x = AdaptiveGCNLayer(64, num_joints)(inputs)
-    x = AdaptiveGCNLayer(128, num_joints)(x)
-
-    # Spatial attention (joint-wise)
-    x = SpatialAttentionBlock(num_heads, key_dim)(x)
-
-    # Flatten joints for temporal modeling
-    T, J, _ = input_shape
-    x = Reshape((T, J * 128))(x)
-
-    # Temporal transformers
-    for _ in range(num_temporal_blocks):
-        x = temporal_transformer_block(x, num_heads=num_heads, key_dim=key_dim, ff_dim=ff_dim)
-
-    x = GlobalAveragePooling1D()(x)
-    x = Dense(128, activation="relu")(x)
-    x = Dropout(0.4)(x)
-    output = Dense(1, activation="linear")(x)
-
-    model = Model(inputs, output)
-    model.compile(optimizer=optimizer, loss="mse", metrics=["mae"])
-    return model
-
-
-# ============================================================
 # 7. Training / Evaluation Helpers (keeps model intact)
 # ============================================================
 
@@ -380,47 +269,13 @@ def plot_and_save(y_true, y_pred, out_dir):
     os.makedirs(out_dir, exist_ok=True)
     mae = mean_absolute_error(y_true, y_pred)
     rmse = mean_squared_error(y_true, y_pred, squared=False)
-    pear = float(pearsonr(y_true, y_pred)[0]) if len(y_true) > 1 else float("nan")
-    kend = float(kendalltau(y_true, y_pred).correlation) if len(y_true) > 1 else float("nan")
-    mx, my = y_true.mean(), y_pred.mean()
-    vx, vy = y_true.var(), y_pred.var()
-    cov = ((y_true - mx) * (y_pred - my)).mean()
-    ccc = float((2 * cov) / (vx + vy + (mx - my) ** 2 + 1e-8)) if len(y_true) > 1 else float("nan")
-    r2 = float(r2_score(y_true, y_pred))
-    evs = float(explained_variance_score(y_true, y_pred))
-    mape = float(mean_absolute_percentage_error(y_true, y_pred))
-    medae = float(median_absolute_error(y_true, y_pred))
+    spearman = float(spearmanr(y_true, y_pred).statistic)
 
     with open(os.path.join(out_dir, "regression_errors.txt"), "w", encoding="utf-8") as f:
-        f.write(
-            "\n".join(
-                [
-                    f"MAE: {mae:.4f}",
-                    f"RMSE: {rmse:.4f}",
-                    f"Pearson: {pear:.4f}",
-                    f"Kendall: {kend:.4f}",
-                    f"CCC: {ccc:.4f}",
-                    f"R2: {r2:.4f}",
-                    f"EVS: {evs:.4f}",
-                    f"MAPE: {mape:.4f}",
-                    f"MedAE: {medae:.4f}",
-                ]
-            )
-            + "\n"
-        )
+        f.write(f"MAE: {mae:.4f}\nRMSE: {rmse:.4f}\nSpearman: {spearman:.4f}\n")
     with open(os.path.join(out_dir, "metrics.json"), "w", encoding="utf-8") as f:
         json.dump(
-            {
-                "mae": float(mae),
-                "rmse": float(rmse),
-                "pearson": pear,
-                "kendall": kend,
-                "ccc": ccc,
-                "r2": r2,
-                "explained_variance": evs,
-                "mape": mape,
-                "medae": medae,
-            },
+            {"mae": float(mae), "rmse": float(rmse), "spearman": float(spearman)},
             f,
             indent=2,
             ensure_ascii=False,
@@ -475,40 +330,48 @@ def plot_and_save(y_true, y_pred, out_dir):
     plt.close()
 
 
-def run_cv(X, y, epochs=20, batch_size=4, folds=5, lr=1e-3):
-    # Single hold-out split (80/20) for consistent environment
-    from sklearn.model_selection import train_test_split
-
-    tr_idx, val_idx = train_test_split(np.arange(len(X)), test_size=0.2, shuffle=True, random_state=42)
+def run_cv(X, y, epochs=80, batch_size=4, folds=5, lr=1e-3):
+    kf = KFold(n_splits=min(folds, len(X)), shuffle=True, random_state=42)
+    fold_metrics = []
+    all_preds, all_trues = [], []
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     run_dir = os.path.join("results", "fusion_tf_runs", ts)
     os.makedirs(run_dir, exist_ok=True)
 
-    model = build_fusion_v2_model(
-        input_shape=X.shape[1:],
-        num_joints=X.shape[2],
-        optimizer=tf.keras.optimizers.Adam(learning_rate=lr)
-    )
-    history = model.fit(
-        X[tr_idx], y[tr_idx],
-        validation_data=(X[val_idx], y[val_idx]),
-        epochs=epochs,
-        batch_size=batch_size,
-        verbose=1,
-        callbacks=[tf.keras.callbacks.ReduceLROnPlateau(patience=5, factor=0.5, monitor="val_loss")]
-    )
-    preds = model.predict(X[val_idx]).flatten()
-    mae = mean_absolute_error(y[val_idx], preds)
-    rmse = mean_squared_error(y[val_idx], preds, squared=False)
+    for fold, (tr_idx, val_idx) in enumerate(kf.split(X), 1):
+        model = build_hybrid_com_stgcn(
+            input_shape=X.shape[1:],
+            num_joints=X.shape[2],
+            optimizer=tf.keras.optimizers.Adam(learning_rate=lr)
+        )
+        history = model.fit(
+            X[tr_idx], y[tr_idx],
+            validation_data=(X[val_idx], y[val_idx]),
+            epochs=epochs,
+            batch_size=batch_size,
+            verbose=1,
+            callbacks=[tf.keras.callbacks.ReduceLROnPlateau(patience=5, factor=0.5, monitor="val_loss")]
+        )
+        preds = model.predict(X[val_idx]).flatten()
+        mae = mean_absolute_error(y[val_idx], preds)
+        rmse = mean_squared_error(y[val_idx], preds, squared=False)
+        fold_metrics.append({"fold": fold, "mae": mae, "rmse": rmse})
+        all_preds.append(preds)
+        all_trues.append(y[val_idx])
 
-    plot_and_save(y[val_idx], preds, run_dir)
-    # Save weights only to avoid serialization issues with custom layers
-    model.save_weights(os.path.join(run_dir, "best_weights.weights.h5"))
-    hist_safe = {k: [float(vv) for vv in vals] for k, vals in history.history.items()}
-    with open(os.path.join(run_dir, "history.json"), "w", encoding="utf-8") as f:
-        json.dump(hist_safe, f, indent=2, ensure_ascii=False)
+        fold_dir = os.path.join(run_dir, f"fold_{fold}")
+        plot_and_save(y[val_idx], preds, fold_dir)
+        # Save weights only to avoid serialization issues with custom layers
+        model.save_weights(os.path.join(fold_dir, "best_weights.weights.h5"))
+        hist_safe = {k: [float(vv) for vv in vals] for k, vals in history.history.items()}
+        with open(os.path.join(fold_dir, "history.json"), "w", encoding="utf-8") as f:
+            json.dump(hist_safe, f, indent=2, ensure_ascii=False)
+
+    all_preds = np.concatenate(all_preds)
+    all_trues = np.concatenate(all_trues)
+    plot_and_save(all_trues, all_preds, os.path.join(run_dir, "overall"))
     with open(os.path.join(run_dir, "metrics.json"), "w", encoding="utf-8") as f:
-        json.dump({"mae": float(mae), "rmse": float(rmse)}, f, indent=2, ensure_ascii=False)
+        json.dump({"folds": fold_metrics}, f, indent=2, ensure_ascii=False)
     print(f"[INFO] Run artifacts saved to: {run_dir}")
 
 
@@ -520,7 +383,7 @@ def main():
     parser = argparse.ArgumentParser(description="Hybrid COM ST-GCN (TF) with visualization")
     parser.add_argument("--processed_dir", type=str, required=True)
     parser.add_argument("--label_dir", type=str, required=True)
-    parser.add_argument("--epochs", type=int, default=20)
+    parser.add_argument("--epochs", type=int, default=80)
     parser.add_argument("--batch_size", type=int, default=4)
     parser.add_argument("--folds", type=int, default=5)
     parser.add_argument("--max_seconds", type=float, default=13.0)

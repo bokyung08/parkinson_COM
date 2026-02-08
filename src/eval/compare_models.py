@@ -13,7 +13,6 @@ def latest_subdir(parent):
 
 
 def load_ablation_rows(base_dir, model_key):
-    """Load ablation_summary.json from the latest run under base_dir."""
     latest = latest_subdir(base_dir)
     if not latest:
         return []

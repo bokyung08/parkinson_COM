@@ -7,12 +7,12 @@ from tensorflow.keras.layers import (
 
 
 # ----------------------------------------------------------------------
-# Spatio-Temporal Transformer 블록들
+# Spatio-Temporal Transformer blocks
 # ----------------------------------------------------------------------
 
 class SpatialTransformerBlock(Layer):
     """
-    동일 프레임 내 관절들 사이의 공간적 관계를 학습하는 블록
+    Spatial block that learns relationships between joints in the same frame.
     """
     def __init__(self, num_heads, key_dim, ff_dim, dropout_rate=0.1, **kwargs):
         super(SpatialTransformerBlock, self).__init__(**kwargs)
@@ -60,15 +60,10 @@ class SpatialTransformerBlock(Layer):
         return config
 
     def compute_output_shape(self, input_shape):
-        # 입력과 동일한 shape을 유지하는 블록이므로 그대로 반환
         return input_shape
 
 
 def temporal_transformer_block(x, num_heads, key_dim, ff_dim, dropout_rate=0.1):
-    """
-    시계열 상의 프레임 간 관계를 학습하는 블록
-    x shape = (Batch, num_frames, hidden_dim)
-    """
     attn_output = MultiHeadAttention(num_heads=num_heads, key_dim=key_dim)(x, x)
     attn_output = Dropout(dropout_rate)(attn_output)
     x = Add()([x, attn_output])
@@ -84,15 +79,10 @@ def temporal_transformer_block(x, num_heads, key_dim, ff_dim, dropout_rate=0.1):
 
 def build_pose_model(input_shape, num_heads=4, key_dim=32, ff_dim=64, num_transformer_blocks=2, optimizer='adam'):
     """
-    Spatio-Temporal Transformer 기반 멀티태스크 모델
-    - 입력: (Frames, Nodes, Features)
-    - 출력:
-        cls : HY stage 기반 이진 분류 (중등도 이상 여부)
-        reg : MDS-UPDRS Part III 총점 회귀
+    Spatio-Temporal Transformer based model (regression head)
     """
     inputs = Input(shape=input_shape)
 
-    # Spatial Attention (프레임별로 관절 간 관계)
     embed_dim = key_dim * num_heads
     x = Dense(embed_dim)(inputs)
     spatial_block_instance = SpatialTransformerBlock(
@@ -102,7 +92,6 @@ def build_pose_model(input_shape, num_heads=4, key_dim=32, ff_dim=64, num_transf
     )
     spatial_x = TimeDistributed(spatial_block_instance)(x)
 
-    # Temporal Attention (프레임 간 관계)
     x_flat = Reshape((input_shape[0], input_shape[1] * embed_dim))(spatial_x)
     temporal_x = x_flat
     for _ in range(num_transformer_blocks):
@@ -110,12 +99,10 @@ def build_pose_model(input_shape, num_heads=4, key_dim=32, ff_dim=64, num_transf
             temporal_x, num_heads, key_dim, ff_dim
         )
 
-    # 공유 임베딩
     x = GlobalAveragePooling1D()(temporal_x)
     x = Dense(128, activation='relu')(x)
     x = Dropout(0.4)(x)
 
-    # 단일 회귀 헤드 (UPDRS 예측)
     reg_output = Dense(1, activation='linear', name='reg')(x)
 
     model = Model(inputs, reg_output)
