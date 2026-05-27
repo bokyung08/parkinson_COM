@@ -1,21 +1,55 @@
-*.pyc
-
+# Python caches
 __pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+.ipynb_checkpoints/
+
+# Local environments
 .env
+.env.*
+.venv/
 venv/
 env/
 
-*.mp4
+# Build/package artifacts
+build/
+dist/
+*.egg-info/
+
+# Private data and generated artifacts
 data/
-*npy
+dataset/
 HospitalData/
 hospitalwalkingdata/
-dataset/
-video_outputs_pose_only/
-results/ 
-logs/
-*.h5
-
 results/
-.gitignore
+Rebuttal/results/
+logs/
+video_outputs_pose_only/
+*.mp4
+*.avi
+*.mov
+*.csv
+*.tsv
+*.jsonl
+*.npy
+*.npz
+*.h5
+*.weights.h5
+*.pth
+*.pt
+*.ckpt
+
+# Local scratch/legacy code not intended for publication
 unused/
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

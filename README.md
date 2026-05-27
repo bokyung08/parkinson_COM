@@ -1,78 +1,106 @@
-# 🧠 COM-Anchored Spatio-Temporal Graph Modeling for Gait Severity Estimation in Parkinson’s Disease
-
----
-
-```
 # Parkinson COM-Anchored Gait Severity Estimation
 
-This repository contains implementations for predicting gait severity (gait UPDRS) from video-derived pose sequences that
-are normalized relative to the subject's center of mass (COM). It is organized and documented for reproducibility and
-paper submission. Both regression and classification variants are provided.
+Research code for estimating Parkinsonian gait severity from video-derived pose
+sequences normalized around the subject center of mass (COM). The repository is
+organized for paper reproduction while excluding private patient data and large
+generated artifacts.
 
-Key contributions
-- COM-normalized hybrid node features: coordinates, relative velocity, amplitude, variability, and joint angles (9 channels).
-- COM-anchored graph convolution and temporal modules: TensorFlow ST-GCN-style and PyTorch GCN + Transformer implementations.
-- Reproducible evaluation pipeline: cross-validation, saved predictions, and visualization utilities including Bland–Altman plots.
+## What is included
 
-Overview
-- `src/` – model implementations, training and evaluation scripts
-   - `train_hybrid_fusion.py`: TF-based COM-STGCN (regression) with CV
-   - `hybrid_gcn.py`: PyTorch COM-GCN regression model
-   - `hybrid_gcn_cls.py`, `train_model_cls.py`: classification (`CLS`) variants
-   - `feature_engineering.py`: COM-relative node feature builder (9 channels)
-   - `model_builder.py`: Transformer-based pose model (regression)
-- `dataset/`, `data/` – preprocessed `.npy` pose files (raw patient data excluded)
-- `results/` – training artifacts, predictions, and plots
+- COM-relative pose preprocessing and hybrid node features.
+- TensorFlow and PyTorch regression models for gait severity estimation.
+- Ablation, baseline, LOSO, and reviewer-response experiment scripts.
+- Evaluation utilities for metrics, prediction plots, and Bland-Altman plots.
 
-Important notes
-- Files or classes with `CLS` or `_cls` are classification-oriented (e.g. `HybridCOMGCNv2Cls`).
-- Regression implementations predict continuous gait UPDRS scores (e.g. `train_hybrid_fusion.py`, `hybrid_gcn.py`).
+## Repository layout
 
-Installation
+```text
+src/
+  features/     COM preprocessing and feature engineering
+  models/       TensorFlow/PyTorch model definitions
+  trainers/     dataset loaders and training loops
+  eval/         metrics and plotting utilities
+  run_*.py      experiment entry points
+Rebuttal/       reviewer-response experiments and summaries
+docs/           data and structure notes
+unused/         local-only obsolete code, ignored by Git
+```
+
+Top-level modules such as `src.train_hybrid_gcn` are compatibility wrappers.
+Canonical implementations live in the subpackages above.
+
+## Installation
+
 ```bash
 conda env create -f environment.yml
-conda activate parkinson_com
+conda activate parkinson_pose_env
 pip install -r requirements.txt
 ```
 
-Quick start examples
-- TensorFlow regression (COM-STGCN, cross-validation):
+Install the PyTorch build that matches your CUDA/CPU environment if the default
+`torch` wheel is not appropriate for your machine.
+
+## Data
+
+Private videos, labels, pose arrays, model weights, and generated results are
+ignored by Git. See `docs/data.md` for the expected layout.
+
+Typical paths used by the scripts:
+
+- `HospitalData/VIDEO`: raw patient videos.
+- `HospitalData/JSON`: label JSON files.
+- `dataset/prefinal_preprocessed`: precomputed `*_pose.npy` files.
+- `results/`: generated metrics, plots, predictions, and weights.
+
+## Quick start
+
+TensorFlow hybrid fusion model:
+
 ```bash
 python -m src.train_hybrid_fusion \
-   --processed_dir dataset/prefinal_preprocessed \
-   --label_dir HospitalData/JSON \
-   --epochs 80 --batch_size 4
+  --processed_dir dataset/prefinal_preprocessed \
+  --label_dir HospitalData/JSON \
+  --epochs 80 \
+  --batch_size 4
 ```
-- PyTorch GCN regression (training script example):
+
+PyTorch hybrid GCN:
+
 ```bash
 python -m src.train_hybrid_gcn \
-   --data_dir dataset/prefinal_preprocessed \
-   --labels HospitalData/JSON \
-   --epochs 100
+  --processed_dir dataset/prefinal_preprocessed \
+  --label_dir HospitalData/JSON \
+  --epochs 100 \
+  --batch_size 4
 ```
-- Classification example (target: `item10_class`):
+
+All A/B/C/D ablations:
+
 ```bash
-python -m src.train_model_cls \
-   --processed_data_path dataset/prefinal_preprocessed \
-   --model_save_path results/models/cls_best.weights.h5
+python -m src.run_all_ablation \
+  --processed_dir dataset/prefinal_preprocessed \
+  --label_dir HospitalData/JSON \
+  --epochs 20 \
+  --batch_size 4
 ```
 
-Data format
-- Preprocessed pose files: `.npy` files where each sample uses either `(T, 33*F)` or `(T, 33, F)` format.
-- `feature_engineering.py`'s `build_hybrid_node_features` consumes `(T, 33, 3)` COM-normalized coordinates and returns `(T, 33, 9)` node features.
+Reviewer-response unified DL baselines:
 
-Reproducibility and evaluation
-- Cross-validation artifacts and model outputs are stored under `results/fusion_tf_runs/<timestamp>/`.
-- Regression metrics: MAE, RMSE, Spearman correlation.
-- Visualizations: scatter plots, residual histograms, and Bland–Altman plots (`src/plot_pred_bland_altman.py`) — especially useful for continuous regression analysis.
+```bash
+python -m Rebuttal.run_unified_abcd_dl_baselines \
+  --processed_dir dataset/prefinal_preprocessed \
+  --label_dir HospitalData/JSON
+```
 
-Paper-ready metadata
-- To enable strict reproducibility, record preprocessing parameters (`max_seconds`, `fps`), ablation setting (A/B/C/D), model hyperparameters (learning rate, batch size, epochs), and random seeds.
-- Consider adding `docs/experiments.md` to list experimental configurations and results tables for the manuscript.
+## Feature ablations
 
-License & citation
-- Add a license of your choice. When citing this repository in publications, include the repository URL and commit hash.
+- `A`: COM-relative coordinates only.
+- `B`: coordinates plus relative velocity.
+- `C`: coordinates, relative velocity, amplitude, and variability.
+- `D`: full hybrid feature set with joint angles.
 
-Contact
-- Open an issue or contact the authors for implementation or reproducibility questions.
+## Notes for publication
 
+Record the commit hash, preprocessing window (`max_seconds`, `fps`), ablation
+setting, model hyperparameters, and random seeds for each reported experiment.
+Do not commit patient data, videos, model weights, or generated result folders.

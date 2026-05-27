@@ -1,7 +1,3 @@
-"""
-PyTorch training script for Hybrid GCN (moved under trainers package).
-"""
-
 import os
 import argparse
 import json
@@ -251,3 +247,159 @@ def compute_saliency(model, loader, device, out_dir, prefix="saliency"):
     plt.tight_layout()
     plt.savefig(os.path.join(out_dir, f"{prefix}_joint_importance.png"))
     plt.close()
+
+
+def evaluate(model, loader, device):
+    model.eval()
+    preds, trues, ids = [], [], []
+    with torch.no_grad():
+        for xb, yb, paths in loader:
+            xb = xb.to(device)
+            pred = model(xb)
+            preds.append(pred.cpu().numpy())
+            trues.append(yb.numpy())
+            ids.extend(paths)
+    y_pred = np.concatenate(preds).flatten()
+    y_true = np.concatenate(trues).flatten()
+    mae = np.mean(np.abs(y_pred - y_true))
+    rmse = np.sqrt(np.mean((y_pred - y_true) ** 2))
+    # Additional metrics
+    pearson = pearsonr(y_true, y_pred).statistic if len(y_true) > 1 else np.nan
+    kendall = kendalltau(y_true, y_pred).statistic if len(y_true) > 1 else np.nan
+    # Concordance correlation coefficient (CCC)
+    mx, my = np.mean(y_true), np.mean(y_pred)
+    vx, vy = np.var(y_true), np.var(y_pred)
+    cov = np.mean((y_true - mx) * (y_pred - my))
+    ccc = (2 * cov) / (vx + vy + (mx - my) ** 2 + 1e-8)
+    # R2 / Explained variance
+    ss_tot = np.sum((y_true - mx) ** 2) + 1e-8
+    ss_res = np.sum((y_true - y_pred) ** 2)
+    r2 = 1 - ss_res / ss_tot
+    evs = 1 - np.var(y_true - y_pred) / (np.var(y_true) + 1e-8)
+    mape = np.mean(np.abs((y_true - y_pred) / (y_true + 1e-8))) * 100
+    medae = np.median(np.abs(y_true - y_pred))
+    return mae, rmse, pearson, kendall, ccc, r2, evs, mape, medae, y_true, y_pred, ids
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--processed_dir", default="HospitalData/processed_pose_data")
+    parser.add_argument("--label_dir", default="HospitalData/JSON")
+    parser.add_argument("--ablation", default="D", choices=["A", "B", "C", "D"])
+    parser.add_argument("--batch_size", type=int, default=4)
+    parser.add_argument("--epochs", type=int, default=20)
+    parser.add_argument("--lr", type=float, default=1e-3)
+    parser.add_argument("--folds", type=int, default=5)
+    parser.add_argument("--seconds", type=float, default=13.0, help="Clip each sequence to this duration (seconds)")
+    parser.add_argument("--fps", type=float, default=30.0, help="Assumed fps for pose sequences")
+    parser.add_argument("--run_dir", default=None, help="Optional output dir; default results/hybrid_runs/<timestamp>")
+    args = parser.parse_args()
+
+    run_dir = args.run_dir or os.path.join("results", "hybrid_runs", datetime.now().strftime("%Y%m%d_%H%M%S"))
+    os.makedirs(run_dir, exist_ok=True)
+    with open(os.path.join(run_dir, "config.json"), "w", encoding="utf-8") as f:
+        json.dump(vars(args), f, indent=2, ensure_ascii=False)
+
+    max_len = int(args.seconds * args.fps)
+    npy_files, labels = list_npy_and_labels(args.processed_dir, args.label_dir)
+    print(f"Found {len(npy_files)} samples for training (ablation {args.ablation}), max_len={max_len} frames (~{args.seconds}s @ {args.fps}fps).")
+    if len(npy_files) == 0:
+        raise SystemExit("No samples found. Ensure *_2_pose.npy exists under the processed directory.")
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    kf = KFold(n_splits=min(args.folds, len(npy_files)), shuffle=True, random_state=42)
+
+    fold_metrics = []
+    per_fold_abs_err = []
+    overall_trues, overall_preds, overall_ids = [], [], []
+    for fold, (train_idx, val_idx) in enumerate(kf.split(npy_files), 1):
+        print(f"\n--- Fold {fold}/{kf.get_n_splits()} ---")
+        train_files = [npy_files[i] for i in train_idx]
+        val_files = [npy_files[i] for i in val_idx]
+        train_labels = [labels[i] for i in train_idx]
+        val_labels = [labels[i] for i in val_idx]
+
+        train_ds = PoseDataset(train_files, train_labels, ablation_mode=args.ablation, max_len=max_len)
+        val_ds = PoseDataset(val_files, val_labels, ablation_mode=args.ablation, max_len=max_len)
+        train_loader = DataLoader(train_ds, batch_size=args.batch_size, shuffle=True, drop_last=False)
+        val_loader = DataLoader(val_ds, batch_size=args.batch_size, shuffle=False, drop_last=False)
+
+        model = HybridCOMGCNv2(in_channels=train_ds[0][0].shape[-1])
+        best_path = os.path.join(run_dir, f"fold_{fold}_best.pth")
+        model, history = train_one_fold(model, train_loader, val_loader, device, epochs=args.epochs, lr=args.lr, save_path=best_path)
+        plot_history(history, os.path.join(run_dir, f"fold_{fold}_history"))
+
+        # load best and evaluate
+        if os.path.exists(best_path):
+            model.load_state_dict(torch.load(best_path, map_location=device))
+        mae, rmse, pearson, kendall, ccc, r2, evs, mape, medae, y_true, y_pred, ids = evaluate(model, val_loader, device)
+        print(f"[Fold {fold}] MAE={mae:.3f} RMSE={rmse:.3f} Pear={pearson:.3f} Kend={kendall:.3f} R2={r2:.3f}")
+        fold_metrics.append((mae, rmse, pearson, kendall, ccc, r2, evs, mape, medae))
+        save_reg_plots(y_true, y_pred, ids, run_dir, prefix=f"fold_{fold}")
+        per_fold_abs_err.append(np.abs(y_pred - y_true))
+        overall_trues.append(y_true)
+        overall_preds.append(y_pred)
+        overall_ids.extend(ids)
+
+    # summarize
+    metrics_arr = np.array(fold_metrics)
+    mean_vals = metrics_arr.mean(axis=0)
+    std_vals = metrics_arr.std(axis=0)
+    keys = ["mae", "rmse", "pearson", "kendall", "ccc", "r2", "explained_variance", "mape", "medae"]
+    summary = {
+        "folds": [
+            {k: float(v) for k, v in zip(keys, vals)}
+            for vals in fold_metrics
+        ],
+        "mean": {k: float(v) for k, v in zip(keys, mean_vals)},
+        "std": {k: float(v) for k, v in zip(keys, std_vals)},
+    }
+    with open(os.path.join(run_dir, "cv_summary.json"), "w", encoding="utf-8") as f:
+        json.dump(summary, f, indent=2, ensure_ascii=False)
+
+    # Overall metrics/plots across folds
+    all_true = np.concatenate(overall_trues) if overall_trues else np.array([])
+    all_pred = np.concatenate(overall_preds) if overall_preds else np.array([])
+    if all_true.size > 0:
+        overall_mae = float(np.mean(np.abs(all_pred - all_true)))
+        overall_rmse = float(np.sqrt(np.mean((all_pred - all_true) ** 2)))
+        overall_pearson = float(pearsonr(all_true, all_pred).statistic) if all_true.size > 1 else float("nan")
+        overall_kendall = float(kendalltau(all_true, all_pred).statistic) if all_true.size > 1 else float("nan")
+        mx, my = all_true.mean(), all_pred.mean()
+        vx, vy = all_true.var(), all_pred.var()
+        cov = np.mean((all_true - mx) * (all_pred - my))
+        overall_ccc = float((2 * cov) / (vx + vy + (mx - my) ** 2 + 1e-8)) if all_true.size > 1 else float("nan")
+        ss_tot = np.sum((all_true - mx) ** 2) + 1e-8
+        ss_res = np.sum((all_true - all_pred) ** 2)
+        overall_r2 = float(1 - ss_res / ss_tot)
+        overall_evs = float(1 - np.var(all_true - all_pred) / (np.var(all_true) + 1e-8))
+        overall_mape = float(np.mean(np.abs((all_true - all_pred) / (all_true + 1e-8))) * 100)
+        overall_medae = float(np.median(np.abs(all_true - all_pred)))
+
+        save_reg_plots(all_true, all_pred, overall_ids, run_dir, prefix="overall")
+        with open(os.path.join(run_dir, "overall_metrics.json"), "w", encoding="utf-8") as f:
+            json.dump(
+                {
+                    "mae": overall_mae,
+                    "rmse": overall_rmse,
+                    "pearson": overall_pearson,
+                    "kendall": overall_kendall,
+                    "ccc": overall_ccc,
+                    "r2": overall_r2,
+                    "explained_variance": overall_evs,
+                    "mape": overall_mape,
+                    "medae": overall_medae,
+                },
+                f, indent=2, ensure_ascii=False
+            )
+        plot_error_distribution(per_fold_abs_err, run_dir)
+        compute_saliency(model, val_loader, device, run_dir, prefix="overall_saliency")
+
+    print("\n=== CV Summary ===")
+    for k, v in summary["mean"].items():
+        print(f"{k.upper()}: mean={v:.3f} std={summary['std'][k]:.3f}")
+    print(f"[INFO] Run artifacts saved to: {run_dir}")
+
+
+if __name__ == "__main__":
+    main()

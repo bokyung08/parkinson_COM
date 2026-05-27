@@ -3,17 +3,40 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
-class GCNBlock(nn.Module):
-    def __init__(self, in_channels, out_channels, A):
-        super().__init__()
-        self.A = A
-        self.theta = nn.Linear(in_channels, out_channels)
+def build_mediapipe_adjacency(num_joints=33):
+    """Return row-normalized MediaPipe-style skeleton adjacency."""
+    A = torch.eye(num_joints)
+    edges = [
+        (11, 13), (13, 15), (12, 14), (14, 16),
+        (23, 25), (25, 27), (24, 26), (26, 28),
+        (11, 12), (23, 24), (11, 23), (12, 24),
+    ]
+    for i, j in edges:
+        if i < num_joints and j < num_joints:
+            A[i, j] = A[j, i] = 1
+    degree = torch.sum(A, dim=1, keepdim=True) + 1e-6
+    return A / degree
 
-    def forward(self, x):
+
+class GCNBlock(nn.Module):
+    def __init__(self, in_channels, out_channels, A=None, dropout=0.0):
+        super().__init__()
+        if A is not None:
+            self.register_buffer("A", A)
+        else:
+            self.A = None
+        self.theta = nn.Linear(in_channels, out_channels)
+        self.dropout = nn.Dropout(dropout)
+
+    def forward(self, x, A=None):
         # x: (B, T, J, C)
         x = self.theta(x)                              # (B, T, J, outC)
-        A = self.A.to(x.device)
-        x = torch.einsum("ij,btjc->btic", A, x)        # graph conv
+        graph = A if A is not None else self.A
+        if graph is None:
+            raise ValueError("GCNBlock requires an adjacency matrix.")
+        graph = graph.to(x.device)
+        x = torch.einsum("ij,btjc->btic", graph, x)    # graph conv
+        x = self.dropout(x)
         return x
 
 
@@ -71,17 +94,7 @@ class HybridCOMGCNv2(nn.Module):
     def __init__(self, in_channels=9, num_joints=33, hidden=128):
         super().__init__()
 
-        A = torch.eye(num_joints)
-        edges = [
-            (11,13),(13,15),(12,14),(14,16),
-            (23,25),(25,27),(24,26),(26,28),
-            (11,12),(23,24),(11,23),(12,24)
-        ]
-        for i, j in edges:
-            if i < num_joints and j < num_joints:
-                A[i, j] = A[j, i] = 1
-        D = torch.sum(A, dim=1, keepdim=True) + 1e-6
-        A = A / D
+        A = build_mediapipe_adjacency(num_joints)
         self.register_buffer("A", A)
 
         self.gcn1 = ResGCNBlock(in_channels, 64, self.A)
@@ -112,3 +125,7 @@ class HybridCOMGCNv2(nn.Module):
         x = self.temporal_tf(x)    # (B, T, C)
         x = x.mean(dim=1)          # temporal pooling
         return self.regressor(x).squeeze(-1)
+
+
+# Backward-compatible name used by older ablation scripts.
+HybridCOMGCN = HybridCOMGCNv2
