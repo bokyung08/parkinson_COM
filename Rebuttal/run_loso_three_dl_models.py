@@ -184,6 +184,19 @@ def write_summary_files(
     if not pred_df.empty:
         pred_df.to_csv(pred_tsv, sep="\t", index=False)
     if not overall_df.empty:
+        if not fold_df.empty and "inference_ms_per_sample" in fold_df.columns:
+            timing = (
+                fold_df.groupby(["target", "ablation", "model_key", "model"], as_index=False)
+                .agg(
+                    params=("params", "first"),
+                    inference_ms_per_sample=("inference_ms_per_sample", "mean"),
+                )
+            )
+            overall_df = overall_df.merge(
+                timing,
+                on=["target", "ablation", "model_key", "model"],
+                how="left",
+            )
         overall_df.to_csv(overall_csv, index=False)
         with overall_json.open("w", encoding="utf-8") as f:
             json.dump(overall_df.to_dict(orient="records"), f, indent=2)
@@ -206,16 +219,20 @@ def write_summary_files(
         "",
         "## Overall Results",
         "",
-        "| Ablation | Model | Folds | N | MAE | RMSE | MedAE |",
-        "|---|---|---:|---:|---:|---:|---:|",
+        "| Ablation | Model | Folds | N | Params | Infer ms/sample | MAE | RMSE | MedAE |",
+        "|---|---|---:|---:|---:|---:|---:|---:|---:|",
     ]
     if overall_df.empty:
-        lines.append("| - | - | 0 | 0 | - | - | - |")
+        lines.append("| - | - | 0 | 0 | - | - | - | - | - |")
     else:
         for row in overall_df.to_dict(orient="records"):
+            params = row.get("params")
+            infer_ms = row.get("inference_ms_per_sample")
+            params_text = "-" if pd.isna(params) else f"{int(params)}"
+            infer_text = "-" if pd.isna(infer_ms) else f"{float(infer_ms):.3f}"
             lines.append(
                 f"| {row['ablation']} | {row['model']} | {int(row['n_folds'])} | "
-                f"{int(row['n_predictions'])} | {float(row['mae']):.3f} | "
+                f"{int(row['n_predictions'])} | {params_text} | {infer_text} | {float(row['mae']):.3f} | "
                 f"{float(row['rmse']):.3f} | {float(row['medae']):.3f} |"
             )
     lines.extend(

@@ -86,6 +86,7 @@ def build_fold_row(
     args: argparse.Namespace,
     params: int,
     train_seconds: float,
+    inference_ms_per_sample: float,
     metrics: dict[str, float],
     n_train: int,
     n_val: int,
@@ -101,6 +102,7 @@ def build_fold_row(
         "n_val": n_val,
         "params": int(params),
         "train_seconds": float(train_seconds),
+        "inference_ms_per_sample": float(inference_ms_per_sample),
         **metrics,
     }
 
@@ -153,11 +155,13 @@ def train_main_tf(
     train_seconds = time.perf_counter() - start
     if best_path.exists():
         model.load_weights(str(best_path))
+    infer_start = time.perf_counter()
     pred = model.predict(x[val_idx], verbose=0).reshape(-1)
+    inference_ms = (time.perf_counter() - infer_start) * 1000.0 / max(len(val_idx), 1)
     metrics = regression_metrics(y[val_idx], pred)
     write_json(model_dir / "history.json", {k: [float(v) for v in vals] for k, vals in history.history.items()})
     write_json(model_dir / "metrics.json", metrics)
-    row = build_fold_row(args, int(model.count_params()), train_seconds, metrics, len(train_idx), len(val_idx))
+    row = build_fold_row(args, int(model.count_params()), train_seconds, inference_ms, metrics, len(train_idx), len(val_idx))
     return row, pred
 
 
@@ -207,11 +211,13 @@ def train_fusion_tf(
     train_seconds = time.perf_counter() - start
     if best_path.exists():
         model.load_weights(str(best_path))
+    infer_start = time.perf_counter()
     pred = model.predict(x[val_idx], verbose=0).reshape(-1)
+    inference_ms = (time.perf_counter() - infer_start) * 1000.0 / max(len(val_idx), 1)
     metrics = regression_metrics(y[val_idx], pred)
     write_json(model_dir / "history.json", {k: [float(v) for v in vals] for k, vals in history.history.items()})
     write_json(model_dir / "metrics.json", metrics)
-    row = build_fold_row(args, int(model.count_params()), train_seconds, metrics, len(train_idx), len(val_idx))
+    row = build_fold_row(args, int(model.count_params()), train_seconds, inference_ms, metrics, len(train_idx), len(val_idx))
     return row, pred
 
 
@@ -324,15 +330,17 @@ def train_hybrid_torch(
         model.load_state_dict(torch.load(best_path, map_location=device))
     model.eval()
     preds = []
+    infer_start = time.perf_counter()
     with torch.no_grad():
         for xb, _, _ in val_loader:
             preds.extend(model(xb.to(device)).cpu().numpy().reshape(-1).tolist())
+    inference_ms = (time.perf_counter() - infer_start) * 1000.0 / max(len(val_idx), 1)
     pred = np.asarray(preds, dtype=np.float32)
     metrics = regression_metrics(y[val_idx], pred)
     write_json(model_dir / "history.json", history)
     write_json(model_dir / "metrics.json", metrics)
     params = int(sum(p.numel() for p in model.parameters() if p.requires_grad))
-    row = build_fold_row(args, params, train_seconds, metrics, len(train_idx), len(val_idx))
+    row = build_fold_row(args, params, train_seconds, inference_ms, metrics, len(train_idx), len(val_idx))
     return row, pred
 
 

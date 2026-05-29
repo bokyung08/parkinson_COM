@@ -48,6 +48,10 @@ video_outputs_pose_only/
 # Local scratch/legacy code not intended for publication
 unused/
 
+# External upstream repositories and downloaded clinical datasets
+CARE-PD-master/
+care-pd-master/
+
 # OS/editor noise
 .DS_Store
 Thumbs.db
