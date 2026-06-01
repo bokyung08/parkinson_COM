@@ -9,7 +9,7 @@ from sklearn.model_selection import GroupKFold
 from torch.utils.data import Dataset
 
 from .constants import DEFAULT_GAIT_KEYS
-from .features import apply_ablation, build_hybrid_features, com_normalize, pad_or_clip, summarize_sequence
+from .features import apply_ablation, build_hybrid_features, com_normalize, pad_or_clip, scale_normalize, summarize_sequence
 
 
 def scalar_score(value) -> float:
@@ -66,9 +66,12 @@ def build_model_input(
     ablation: str,
     input_kind: str,
     normalize_com: bool = True,
+    scale_normalization: str = "none",
 ) -> np.ndarray:
     if normalize_com:
         joints = com_normalize(joints)
+    if scale_normalization != "none":
+        joints = scale_normalize(joints, scale_normalization)
     if input_kind == "coords":
         return pad_or_clip(joints, max_len).astype(np.float32)
     if input_kind == "hybrid":
@@ -88,6 +91,10 @@ class Gait17Dataset(Dataset):
         ablation: str,
         input_kind: str,
         normalize_com: bool = True,
+        scale_normalization: str = "none",
+        scale_aug_min: float = 1.0,
+        scale_aug_max: float = 1.0,
+        random_state: int = 42,
     ):
         self.manifest_path = manifest_path
         self.df = load_manifest(manifest_path).iloc[indices].reset_index(drop=True)
@@ -95,6 +102,10 @@ class Gait17Dataset(Dataset):
         self.ablation = ablation
         self.input_kind = input_kind
         self.normalize_com = normalize_com
+        self.scale_normalization = scale_normalization
+        self.scale_aug_min = float(scale_aug_min)
+        self.scale_aug_max = float(scale_aug_max)
+        self.rng = np.random.default_rng(random_state)
 
     def __len__(self) -> int:
         return len(self.df)
@@ -102,7 +113,17 @@ class Gait17Dataset(Dataset):
     def __getitem__(self, idx: int):
         row = self.df.iloc[idx]
         joints = load_npz_sequence(self.manifest_path, row)
-        x = build_model_input(joints, self.max_len, self.ablation, self.input_kind, self.normalize_com)
+        if self.scale_aug_min != 1.0 or self.scale_aug_max != 1.0:
+            scale = self.rng.uniform(self.scale_aug_min, self.scale_aug_max)
+            joints = (joints * np.float32(scale)).astype(np.float32)
+        x = build_model_input(
+            joints,
+            self.max_len,
+            self.ablation,
+            self.input_kind,
+            self.normalize_com,
+            self.scale_normalization,
+        )
         y = np.float32(row["target"])
         return x, y, str(row["sample_id"])
 
@@ -114,12 +135,13 @@ def materialize_arrays(
     ablation: str,
     input_kind: str,
     normalize_com: bool = True,
+    scale_normalization: str = "none",
 ) -> tuple[np.ndarray, np.ndarray, list[str]]:
     df = load_manifest(manifest_path).iloc[indices].reset_index(drop=True)
     xs, ys, ids = [], [], []
     for _, row in df.iterrows():
         joints = load_npz_sequence(manifest_path, row)
-        xs.append(build_model_input(joints, max_len, ablation, input_kind, normalize_com))
+        xs.append(build_model_input(joints, max_len, ablation, input_kind, normalize_com, scale_normalization))
         ys.append(float(row["target"]))
         ids.append(str(row["sample_id"]))
     return np.asarray(xs, dtype=np.float32), np.asarray(ys, dtype=np.float32), ids
@@ -131,8 +153,9 @@ def materialize_tabular(
     max_len: int,
     ablation: str,
     normalize_com: bool = True,
+    scale_normalization: str = "none",
 ) -> tuple[np.ndarray, np.ndarray, list[str]]:
-    x, y, ids = materialize_arrays(manifest_path, indices, max_len, ablation, "hybrid", normalize_com)
+    x, y, ids = materialize_arrays(manifest_path, indices, max_len, ablation, "hybrid", normalize_com, scale_normalization)
     return np.asarray([summarize_sequence(seq) for seq in x], dtype=np.float32), y, ids
 
 

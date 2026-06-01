@@ -4,6 +4,14 @@ data/*
 results/*
 !results/README.md
 
+# Generated experiment diagnostics. Keep scripts and summary docs in Git, not
+# bulky per-condition predictions/figures while experiments are running.
+docs/com_robustness/
+docs/com_robustness_realistic/
+docs/scale_robustness_screen/
+docs/scale_robustness_full/
+docs/scale_feature_invariance/
+
 .venv_cuda/
 CARE-PD-master/
 care-pd-master/

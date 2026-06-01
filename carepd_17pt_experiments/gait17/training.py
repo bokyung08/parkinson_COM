@@ -17,7 +17,7 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVR
 from torch.utils.data import DataLoader, TensorDataset
 
-from .data import materialize_arrays, materialize_tabular
+from .data import Gait17Dataset, materialize_arrays, materialize_tabular
 from .models import expected_score_from_logits, make_model, ordinal_focal_loss
 
 LU_CLASSIFIERS = {"lu_ofddnet_official"}
@@ -52,8 +52,20 @@ def sklearn_models(random_state: int) -> dict[str, Pipeline]:
 
 
 def run_ml_fold(manifest_path: Path, train_idx: np.ndarray, val_idx: np.ndarray, args, model_name: str) -> tuple[dict, np.ndarray, np.ndarray, list[str]]:
-    x_train, y_train, _ = materialize_tabular(manifest_path, train_idx, args.max_len, args.ablation)
-    x_val, y_val, ids = materialize_tabular(manifest_path, val_idx, args.max_len, args.ablation)
+    x_train, y_train, _ = materialize_tabular(
+        manifest_path,
+        train_idx,
+        args.max_len,
+        args.ablation,
+        scale_normalization=args.scale_normalization,
+    )
+    x_val, y_val, ids = materialize_tabular(
+        manifest_path,
+        val_idx,
+        args.max_len,
+        args.ablation,
+        scale_normalization=args.scale_normalization,
+    )
     model = clone(sklearn_models(args.random_state)[model_name])
     start = time.perf_counter()
     model.fit(x_train, y_train)
@@ -72,15 +84,61 @@ def run_ml_fold(manifest_path: Path, train_idx: np.ndarray, val_idx: np.ndarray,
     return row, y_val, pred, ids
 
 
-def run_torch_fold(manifest_path: Path, train_idx: np.ndarray, val_idx: np.ndarray, args, model_name: str) -> tuple[dict, np.ndarray, np.ndarray, list[str]]:
+def run_torch_fold(
+    manifest_path: Path,
+    train_idx: np.ndarray,
+    val_idx: np.ndarray,
+    args,
+    model_name: str,
+    checkpoint_path: Path | None = None,
+    checkpoint_meta: dict | None = None,
+) -> tuple[dict, np.ndarray, np.ndarray, list[str]]:
     input_kind = "coords" if model_name in {"stgcn", *LU_CLASSIFIERS} else "hybrid"
-    x_train, y_train, _ = materialize_arrays(manifest_path, train_idx, args.max_len, args.ablation, input_kind)
-    x_val, y_val, ids = materialize_arrays(manifest_path, val_idx, args.max_len, args.ablation, input_kind)
+    use_scale_aug = args.scale_aug_min != 1.0 or args.scale_aug_max != 1.0
+    if use_scale_aug:
+        x_val, y_val, ids = materialize_arrays(
+            manifest_path,
+            val_idx,
+            args.max_len,
+            args.ablation,
+            input_kind,
+            scale_normalization=args.scale_normalization,
+        )
+        train_ds = Gait17Dataset(
+            manifest_path,
+            train_idx,
+            args.max_len,
+            args.ablation,
+            input_kind,
+            scale_normalization=args.scale_normalization,
+            scale_aug_min=args.scale_aug_min,
+            scale_aug_max=args.scale_aug_max,
+            random_state=args.random_state,
+        )
+        in_channels = int(x_val.shape[-1])
+    else:
+        x_train, y_train, _ = materialize_arrays(
+            manifest_path,
+            train_idx,
+            args.max_len,
+            args.ablation,
+            input_kind,
+            scale_normalization=args.scale_normalization,
+        )
+        x_val, y_val, ids = materialize_arrays(
+            manifest_path,
+            val_idx,
+            args.max_len,
+            args.ablation,
+            input_kind,
+            scale_normalization=args.scale_normalization,
+        )
+        train_ds = TensorDataset(torch.from_numpy(x_train).float(), torch.from_numpy(y_train).float())
+        in_channels = int(x_train.shape[-1])
     device = torch.device("cuda" if args.device == "cuda" and torch.cuda.is_available() else "cpu")
-    model = make_model(model_name, x_train.shape[-1]).to(device)
+    model = make_model(model_name, in_channels).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate, betas=(0.9, 0.999))
     criterion = nn.MSELoss()
-    train_ds = TensorDataset(torch.from_numpy(x_train).float(), torch.from_numpy(y_train).float())
     val_tensor = torch.from_numpy(x_val).float().to(device)
     loader = DataLoader(train_ds, batch_size=args.batch_size, shuffle=True)
     best_state = None
@@ -88,7 +146,8 @@ def run_torch_fold(manifest_path: Path, train_idx: np.ndarray, val_idx: np.ndarr
     start = time.perf_counter()
     for _ in range(args.epochs):
         model.train()
-        for xb, yb in loader:
+        for batch in loader:
+            xb, yb = batch[:2]
             xb = xb.to(device)
             yb = yb.to(device)
             optimizer.zero_grad()
@@ -111,6 +170,24 @@ def run_torch_fold(manifest_path: Path, train_idx: np.ndarray, val_idx: np.ndarr
     train_seconds = time.perf_counter() - start
     if best_state is not None:
         model.load_state_dict(best_state)
+    if checkpoint_path is not None:
+        checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
+        torch.save(
+            {
+                "model_name": model_name,
+                "state_dict": model.state_dict(),
+                "input_kind": input_kind,
+                "in_channels": int(in_channels),
+                "ablation": args.ablation,
+                "scale_normalization": args.scale_normalization,
+                "scale_aug_min": float(args.scale_aug_min),
+                "scale_aug_max": float(args.scale_aug_max),
+                "max_len": int(args.max_len),
+                "best_val_mae": float(best_val),
+                "meta": checkpoint_meta or {},
+            },
+            checkpoint_path,
+        )
     model.eval()
     infer_start = time.perf_counter()
     with torch.no_grad():

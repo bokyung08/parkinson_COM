@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import numpy as np
 
+from .constants import H36M17_EDGES
+
 
 def mediapipe33_to_h36m17(joints: np.ndarray) -> np.ndarray:
     """Convert MediaPipe 33 joints to the H36M-compatible 17-joint layout."""
@@ -44,6 +46,36 @@ def ensure_h36m17(raw: np.ndarray, source_format: str) -> np.ndarray:
 def com_normalize(joints: np.ndarray) -> np.ndarray:
     pelvis = joints[:, 0:1, :]
     return (joints - pelvis).astype(np.float32)
+
+
+def body_scale_value(joints: np.ndarray, mode: str = "none") -> float:
+    """Estimate a sequence-level body scale from H36M17 joints."""
+    if mode == "none":
+        return 1.0
+    joints = joints.astype(np.float32)
+    eps = 1e-6
+    if mode == "median_bone":
+        lengths = []
+        for a, b in H36M17_EDGES:
+            lengths.append(np.linalg.norm(joints[:, a] - joints[:, b], axis=-1))
+        values = np.concatenate(lengths)
+    elif mode == "torso":
+        values = np.linalg.norm(joints[:, 8] - joints[:, 0], axis=-1)
+    elif mode == "hip_width":
+        values = np.linalg.norm(joints[:, 1] - joints[:, 4], axis=-1)
+    else:
+        raise ValueError(f"Unsupported scale normalization mode: {mode}")
+    values = values[np.isfinite(values) & (values > eps)]
+    if values.size == 0:
+        return 1.0
+    return float(np.median(values))
+
+
+def scale_normalize(joints: np.ndarray, mode: str = "none") -> np.ndarray:
+    scale = body_scale_value(joints, mode)
+    if scale <= 1e-6:
+        return joints.astype(np.float32)
+    return (joints / np.float32(scale)).astype(np.float32)
 
 
 def pad_or_clip(x: np.ndarray, max_len: int) -> np.ndarray:
@@ -109,4 +141,3 @@ def joint_collection_distances(joints: np.ndarray) -> np.ndarray:
     dist = np.linalg.norm(diff, axis=-1)
     iu = np.triu_indices(joints.shape[1], k=1)
     return dist[:, iu[0], iu[1]].astype(np.float32)
-

@@ -1,6 +1,6 @@
 # Final Integrated Results
 
-- Last updated: 2026-05-29
+- Last updated: 2026-06-01
 - Dataset: CNUH + CARE-PD, converted to H36M-compatible 17-joint gait sequences
 - Split: subject-level GroupKFold, 5 folds
 - Target: MDS-UPDRS item 10 gait score, range 0-3
@@ -79,6 +79,116 @@ Manuscript-safe wording:
 > Under identical subject-level GroupKFold evaluation, the proposed bounded
 > graph-temporal regression model achieved lower MAE than both ST-GCN and the
 > official-architecture Lu et al. baseline.
+
+## Per-Class Error Analysis
+
+Per-class metrics are computed from the completed `predictions.tsv` files. The
+primary Ours V1 result is from `groupkfold_h36m17_ours_lu_official_cuda`.
+
+| Score | N | MAE | RMSE | Mean prediction | Prediction SD |
+|---|---:|---:|---:|---:|---:|
+| 0 | 2,615 | 0.225 | 0.395 | 0.225 | 0.325 |
+| 1 | 2,183 | 0.342 | 0.482 | 0.892 | 0.470 |
+| 2 | 1,244 | 0.649 | 0.889 | 1.416 | 0.671 |
+| 3 | 45 | 0.738 | 0.930 | 2.262 | 0.566 |
+
+The model is most accurate for score 0 and score 1, which are also the most
+common classes. Score 3 has only 45 samples and remains the least stable class.
+This should be reported as class imbalance rather than as a separate model
+failure.
+
+## Confusion Matrix
+
+The model remains a continuous regressor. The matrix below is for
+interpretability only: predictions are rounded to the nearest integer and
+clipped to `[0, 3]`.
+
+| True score | Pred 0 | Pred 1 | Pred 2 | Pred 3 |
+|---:|---:|---:|---:|---:|
+| 0 | 2,160 | 444 | 11 | 0 |
+| 1 | 492 | 1,509 | 182 | 0 |
+| 2 | 181 | 419 | 642 | 2 |
+| 3 | 0 | 6 | 20 | 19 |
+
+Row-normalized matrix:
+
+| True score | Pred 0 | Pred 1 | Pred 2 | Pred 3 |
+|---:|---:|---:|---:|---:|
+| 0 | 0.826 | 0.170 | 0.004 | 0.000 |
+| 1 | 0.225 | 0.691 | 0.083 | 0.000 |
+| 2 | 0.145 | 0.337 | 0.516 | 0.002 |
+| 3 | 0.000 | 0.133 | 0.444 | 0.422 |
+
+The confusion matrix shows that most misclassifications occur between adjacent
+clinical scores. The most notable weakness is underestimation of true score 2
+and score 3 cases.
+
+## COM Robustness Analysis
+
+COM robustness was evaluated by rerunning Configuration D once with saved fold
+checkpoints and then applying perturbations only at inference time. The
+checkpointed D run used for this analysis has baseline MAE 0.369 and RMSE
+0.564, which is close to the final reported D run but not identical because it
+is a separate training run.
+
+The key result is asymmetric: COM centering gives near-perfect robustness to
+horizontal translation, but it does not by itself provide scale invariance.
+
+| Condition | MAE | RMSE | Delta MAE (%) | Delta RMSE (%) |
+|---|---:|---:|---:|---:|
+| Original | 0.369 | 0.564 | 0.000 | 0.000 |
+| Scale 0.70 | 0.501 | 0.689 | 35.925 | 22.166 |
+| Scale 0.85 | 0.416 | 0.639 | 12.733 | 13.259 |
+| Scale 1.15 | 0.469 | 0.673 | 27.050 | 19.226 |
+| Scale 1.30 | 0.540 | 0.780 | 46.488 | 38.201 |
+| Shift -0.20 | 0.369 | 0.564 | -0.000 | 0.000 |
+| Shift -0.10 | 0.369 | 0.564 | 0.000 | 0.000 |
+| Shift +0.10 | 0.369 | 0.564 | -0.000 | 0.000 |
+| Shift +0.20 | 0.369 | 0.564 | -0.000 | 0.000 |
+
+Wilcoxon tests show that scale perturbations significantly change absolute
+errors with non-trivial effect sizes, whereas translation perturbations have
+negligible practical effects despite occasional small p-values caused by the
+large sample size.
+
+| Condition | Wilcoxon p | Rank-biserial effect |
+|---|---:|---:|
+| Scale 0.70 | 6.52e-149 | 0.385 |
+| Scale 0.85 | 7.62e-62 | 0.246 |
+| Scale 1.15 | 4.73e-62 | 0.246 |
+| Scale 1.30 | 5.41e-101 | 0.316 |
+| Shift -0.20 | 4.99e-02 | -0.038 |
+| Shift -0.10 | 4.08e-01 | -0.017 |
+| Shift +0.10 | 3.42e-01 | -0.020 |
+| Shift +0.20 | 1.26e-02 | -0.049 |
+
+Manuscript-safe interpretation:
+
+> COM-centered normalization effectively removes global horizontal position
+> shifts, as translation perturbations produced virtually no change in MAE or
+> RMSE. However, COM centering alone does not guarantee scale invariance:
+> simulated camera-distance changes increased error, especially under extreme
+> scale factors. Therefore, we report COM centering as a position-normalization
+> mechanism and treat scale robustness as a limitation requiring future
+> bone-length or body-size normalization and scale augmentation.
+
+Full outputs are stored in `docs/com_robustness/`.
+
+A narrower realistic-range analysis was also generated in
+`docs/com_robustness_realistic/`. In this range, COM-only D remains relatively
+stable for small scale shifts but still degrades at `s = 1.10`:
+
+| Condition | MAE | RMSE | Delta MAE (%) |
+|---|---:|---:|---:|
+| Original | 0.369 | 0.564 | 0.000 |
+| Scale 0.90 | 0.391 | 0.607 | 5.960 |
+| Scale 0.95 | 0.374 | 0.580 | 1.339 |
+| Scale 1.05 | 0.398 | 0.586 | 7.799 |
+| Scale 1.10 | 0.432 | 0.622 | 17.224 |
+
+Scale-robustness follow-up candidates are implemented in
+`docs/scale_robustness_experiment_plan.md`. These should be screened before any
+additional scale-robustness claim is added to the manuscript.
 
 ## Ours V1 A/B/C/D Ablation
 
@@ -168,3 +278,44 @@ Outputs:
 - `docs\ours_abcd_summary.md`
 - `results\OURS_ABCD_SUMMARY.md`
 - `results\ours_abcd_summary.csv`
+
+## Visualization Outputs
+
+All generated figures are collected in:
+
+```text
+docs/final_integrated_figures/
+```
+
+Recommended manuscript figures:
+
+| Figure | Suggested use |
+|---|---|
+| `02_mae_ranking.png` | Main performance comparison figure |
+| `07_ablation_metrics.png` | A/B/C/D ablation figure |
+| `09_ours_per_class_error.png` | Per-class error figure |
+| `12_ours_confusion_normalized.png` | Confusion matrix figure |
+| `18_calibration_curve_by_model.png` | Calibration-style model behavior figure |
+
+Recommended main-text composite:
+
+```text
+Figure X:
+  (a) 02_mae_ranking.png
+  (b) 07_ablation_metrics.png
+  (c) 09_ours_per_class_error.png
+  (d) 12_ours_confusion_normalized.png
+```
+
+Recommended supplementary figures:
+
+| Figure | Suggested use |
+|---|---|
+| `05_fold_mae_by_model.png` | Fold-level stability |
+| `18_calibration_curve_by_model.png` | Calibration-style score trend |
+| `20_mae_advantage_vs_baselines.png` | Compact MAE gain over baselines |
+| `16_dataset_mae_breakdown.png` | Dataset-level breakdown; supplementary because CNUH has only 21 samples |
+| `19_class_distribution.png` | Class imbalance explanation |
+
+Additional diagnostic figures are listed in
+`docs/final_integrated_figures/README.md`.

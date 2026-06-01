@@ -27,6 +27,29 @@ The current manuscript-facing reports are:
 
 - `docs/final_integrated_results.md`
 - `docs/ours_abcd_summary.md`
+- `docs/per_class_confusion_analysis.md`
+- `docs/com_robustness_status.md`
+- `docs/scale_robustness_experiment_plan.md`
+- `docs/final_integrated_figures/`
+
+Recommended main-text figures:
+
+| Figure | Use |
+|---|---|
+| `docs/final_integrated_figures/02_mae_ranking.png` | Main model comparison |
+| `docs/final_integrated_figures/07_ablation_metrics.png` | Feature ablation |
+| `docs/final_integrated_figures/09_ours_per_class_error.png` | Per-class error |
+| `docs/final_integrated_figures/12_ours_confusion_normalized.png` | Rounded-score confusion matrix |
+
+Recommended supplementary figures:
+
+| Figure | Use |
+|---|---|
+| `docs/final_integrated_figures/05_fold_mae_by_model.png` | Fold-level stability |
+| `docs/final_integrated_figures/18_calibration_curve_by_model.png` | Calibration-style score trend |
+| `docs/final_integrated_figures/20_mae_advantage_vs_baselines.png` | MAE gain over selected baselines |
+| `docs/final_integrated_figures/16_dataset_mae_breakdown.png` | Dataset-level breakdown |
+| `docs/final_integrated_figures/19_class_distribution.png` | Class imbalance explanation |
 
 Final main-table decision:
 
@@ -51,6 +74,24 @@ Current Ours V1 A/B/C/D ablation:
 The D row is unified to the best completed D run from
 `results\groupkfold_h36m17_ours_lu_official_cuda`. A/B/C use the dedicated
 ablation runs under `results\groupkfold_h36m17_ours_ablation_{A,B,C}_cuda`.
+
+Current per-class Ours V1 result:
+
+| Score | N | MAE | RMSE |
+|---|---:|---:|---:|
+| 0 | 2,615 | 0.225 | 0.395 |
+| 1 | 2,183 | 0.342 | 0.482 |
+| 2 | 1,244 | 0.649 | 0.889 |
+| 3 | 45 | 0.738 | 0.930 |
+
+COM robustness has now been evaluated with checkpointed fold inference. COM
+centering was effectively invariant to horizontal translation, but scale
+perturbations still increased error. See `docs/com_robustness_status.md` and
+`docs/com_robustness/`.
+
+Scale-robustness follow-up candidates are implemented but should be screened
+before being used in the manuscript. See
+`docs/scale_robustness_experiment_plan.md`.
 
 ## Environment
 
@@ -253,6 +294,29 @@ python scripts\summarize_ours_abcd.py
 
 This writes `docs\ours_abcd_summary.md`, mirrors the same markdown to
 `results\OURS_ABCD_SUMMARY.md`, and writes `results\ours_abcd_summary.csv`.
+
+To reproduce COM robustness:
+
+```powershell
+.\scripts\run_ours_d_checkpointed_cuda.cmd
+.\scripts\run_com_robustness_cuda.cmd
+```
+
+The first command recreates the D fold checkpoints once. The second command
+performs scale, translation, and combined perturbation inference without
+additional training. The completed analysis is stored in `docs\com_robustness`.
+
+To screen scale-robustness candidates:
+
+```powershell
+.\scripts\run_scale_robustness_screen_cuda.cmd
+```
+
+After screening, run only selected candidates at full 5-fold scale:
+
+```powershell
+.\scripts\run_scale_robustness_full_selected_cuda.cmd
+```
 
 Outputs:
 

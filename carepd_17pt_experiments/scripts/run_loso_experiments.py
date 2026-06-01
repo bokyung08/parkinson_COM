@@ -114,6 +114,8 @@ def write_run_readme(
         f"- N splits: `{args.n_splits if args.split_strategy == 'groupkfold' else 'LOSO'}`",
         f"- Ablation: `{args.ablation}`",
         f"- Max length: `{args.max_len}`",
+        f"- Scale normalization: `{args.scale_normalization}`",
+        f"- Scale augmentation: `{args.scale_aug_min:.2f}-{args.scale_aug_max:.2f}`",
         f"- Models: `{' '.join(args.models)}`",
         f"- Dataset filter: `{' '.join(args.datasets) if args.datasets else 'all'}`",
         f"- Completed jobs: `{completed}/{total_jobs}`",
@@ -195,8 +197,19 @@ def main() -> None:
     parser.add_argument("--learning_rate", type=float, default=1e-4)
     parser.add_argument("--random_state", type=int, default=42)
     parser.add_argument("--device", choices=["cpu", "cuda"], default="cpu")
+    parser.add_argument(
+        "--scale_normalization",
+        choices=["none", "median_bone", "torso", "hip_width"],
+        default="none",
+        help="Optional body-scale normalization after COM centering.",
+    )
+    parser.add_argument("--scale_aug_min", type=float, default=1.0, help="Minimum random train-time coordinate scale.")
+    parser.add_argument("--scale_aug_max", type=float, default=1.0, help="Maximum random train-time coordinate scale.")
     parser.add_argument("--fold_limit", type=int, default=None, help="Optional first-N-fold limit for smoke tests.")
+    parser.add_argument("--save_checkpoints", action="store_true", help="Save best torch checkpoint for each fold.")
     args = parser.parse_args()
+    if args.scale_aug_min <= 0 or args.scale_aug_max <= 0 or args.scale_aug_min > args.scale_aug_max:
+        raise SystemExit("--scale_aug_min and --scale_aug_max must be positive and min <= max.")
 
     manifest_path = Path(args.manifest)
     out_dir = Path(args.out_dir)
@@ -242,7 +255,29 @@ def main() -> None:
                 if model_name in ML_MODELS:
                     row, y_true, y_pred, ids = run_ml_fold(manifest_path, train_idx, val_idx, args, model_name)
                 elif model_name in TORCH_MODELS:
-                    row, y_true, y_pred, ids = run_torch_fold(manifest_path, train_idx, val_idx, args, model_name)
+                    checkpoint_path = None
+                    checkpoint_meta = None
+                    if args.save_checkpoints:
+                        checkpoint_path = out_dir / "checkpoints" / f"{model_name}_fold_{fold:02d}.pt"
+                        checkpoint_meta = {
+                            "fold": fold,
+                            "split_id": split_id,
+                            "n_train": int(len(train_idx)),
+                            "n_val": int(len(val_idx)),
+                            "scale_normalization": args.scale_normalization,
+                            "scale_aug_min": float(args.scale_aug_min),
+                            "scale_aug_max": float(args.scale_aug_max),
+                            **split_summary,
+                        }
+                    row, y_true, y_pred, ids = run_torch_fold(
+                        manifest_path,
+                        train_idx,
+                        val_idx,
+                        args,
+                        model_name,
+                        checkpoint_path=checkpoint_path,
+                        checkpoint_meta=checkpoint_meta,
+                    )
                 else:
                     raise ValueError(f"Unknown model: {model_name}")
             except KeyboardInterrupt:
@@ -343,6 +378,8 @@ def main() -> None:
         f"- N splits: `{args.n_splits if args.split_strategy == 'groupkfold' else 'LOSO'}`",
         f"- Ablation: `{args.ablation}`",
         f"- Max length: `{args.max_len}`",
+        f"- Scale normalization: `{args.scale_normalization}`",
+        f"- Scale augmentation: `{args.scale_aug_min:.2f}-{args.scale_aug_max:.2f}`",
         "",
         "| Category | Model | Folds | N | Params | Infer ms/sample | MAE | RMSE | MedAE |",
         "|---|---|---:|---:|---:|---:|---:|---:|---:|",
