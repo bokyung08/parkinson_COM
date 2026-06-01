@@ -18,7 +18,15 @@ from gait17.training import run_ml_fold, run_torch_fold, regression_metrics
 
 
 ML_MODELS = {"ridge", "svr", "rf", "mlp_shallow"}
-TORCH_MODELS = {"temporal_cnn", "ours", "stgcn", "lu_ofddnet_official"}
+TORCH_MODELS = {
+    "temporal_cnn",
+    "ours_mlp",
+    "ours_gcn_mlp",
+    "ours_gcn_attn_mlp",
+    "ours",
+    "stgcn",
+    "lu_ofddnet_official",
+}
 DEFAULT_MODELS = ["ridge", "svr", "rf", "mlp_shallow", "temporal_cnn", "ours", "stgcn", "lu_ofddnet_official"]
 
 

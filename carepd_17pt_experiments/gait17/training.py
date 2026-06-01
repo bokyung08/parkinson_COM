@@ -197,6 +197,9 @@ def run_torch_fold(
     infer_ms = (time.perf_counter() - infer_start) * 1000.0 / max(len(x_val), 1)
     category = {
         "temporal_cnn": "Deep Learning",
+        "ours_mlp": "Architecture Ablation",
+        "ours_gcn_mlp": "Architecture Ablation",
+        "ours_gcn_attn_mlp": "Architecture Ablation",
         "ours": "Proposed",
         "stgcn": "SOTA",
         "lu_ofddnet_official": "SOTA",

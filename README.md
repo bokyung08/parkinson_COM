@@ -216,10 +216,25 @@ python scripts\make_final_figures.py
 | Document | Purpose |
 |---|---|
 | `carepd_17pt_experiments/docs/final_integrated_results.md` | Final ML/DL/SOTA/Ours results and tables |
+| `carepd_17pt_experiments/docs/final_integrated_results_ko.md` | Korean version of the final integrated analysis |
 | `carepd_17pt_experiments/docs/ours_abcd_summary.md` | A/B/C/D ablation summary |
 | `carepd_17pt_experiments/docs/per_class_confusion_analysis.md` | Per-class MAE/RMSE and confusion matrix |
 | `carepd_17pt_experiments/docs/com_robustness_status.md` | COM robustness result and interpretation |
-| `carepd_17pt_experiments/docs/scale_robustness_experiment_plan.md` | Follow-up scale robustness candidates |
+| `carepd_17pt_experiments/docs/com_robustness_final_analysis.md` | Manuscript-ready COM/scale robustness analysis |
+| `carepd_17pt_experiments/docs/cross_dataset_validation_analysis.md` | Cross-dataset zero-shot transfer results |
+| `carepd_17pt_experiments/docs/cross_dataset_validation_record_en.md` | English cross-dataset result record and analysis |
+| `carepd_17pt_experiments/docs/cross_dataset_validation_record_ko.md` | Korean cross-dataset result record and analysis |
+| `carepd_17pt_experiments/docs/cross_dataset_model_comparison.md` | Ours vs ST-GCN vs Lu official zero-shot transfer comparison |
+| `carepd_17pt_experiments/docs/carepd_lodo_analysis.md` | CARE-PD leave-one-dataset-out validation |
+| `carepd_17pt_experiments/docs/calibration_reliability_analysis.md` | Reviewer-facing calibration reliability analysis |
+| `carepd_17pt_experiments/docs/learning_curve_ours_analysis.md` | Reviewer-facing Ours V1 learning curve |
+| `carepd_17pt_experiments/docs/architecture_ablation_analysis.md` | GraphConv / Joint Attention / Temporal Transformer ablation |
+| `carepd_17pt_experiments/docs/reviewer_revision_action_plan.md` | Minor-revision response checklist |
+| `carepd_17pt_experiments/docs/carepd_cohort_split_table.md` | CARE-PD included/excluded cohort transparency table |
+| `carepd_17pt_experiments/docs/lu_reimplementation_fairness.md` | Lu et al. baseline reimplementation notes |
+| `carepd_17pt_experiments/docs/reviewer_experiment_figures.md` | Calibration and learning-curve figure plan |
+| `carepd_17pt_experiments/docs/domain_gap_followup_experiments.md` | Five follow-up experiments for domain-gap interpretation |
+| `carepd_17pt_experiments/docs/scale_robustness_full_summary.md` | Full 5-fold scale-robustness candidate summary |
 | `carepd_17pt_experiments/docs/final_integrated_figures/README.md` | Figure index and recommended usage |
 
 ## COM Robustness
@@ -228,6 +243,12 @@ COM robustness was evaluated with checkpointed fold inference. The result
 supports horizontal translation robustness but not full camera-distance
 robustness: translation offsets changed MAE/RMSE by approximately 0%, whereas
 scale factors increased MAE by 12.7% to 46.5%.
+
+The scale-robust follow-up is complete. The recommended robust operating point
+uses the same Ours V1 architecture with median-bone scale normalization and
+moderate train-time scale augmentation. It achieved MAE 0.366 and RMSE 0.567,
+with no measurable MAE degradation under the tested scale factors from 0.70 to
+1.30 or horizontal translations from -0.20 to +0.20.
 
 To reproduce it:
 
@@ -246,7 +267,7 @@ carepd_17pt_experiments/docs/com_robustness_status.md
 carepd_17pt_experiments/docs/com_robustness/
 ```
 
-Follow-up candidates for scale robustness are implemented under:
+Scale-robustness candidates can be reproduced with:
 
 ```powershell
 cd carepd_17pt_experiments
@@ -254,10 +275,69 @@ cd carepd_17pt_experiments
 .\scripts\run_scale_robustness_full_selected_cuda.cmd
 ```
 
-Screening and full-run interpretation are documented in:
+Full-run interpretation is documented in:
 
 ```text
-carepd_17pt_experiments/docs/scale_robustness_experiment_plan.md
+carepd_17pt_experiments/docs/com_robustness_final_analysis.md
+carepd_17pt_experiments/docs/scale_robustness_full_summary.md
+```
+
+## Cross-Dataset Validation
+
+Zero-shot cross-dataset transfer has been completed without fine-tuning or
+domain adaptation:
+
+| Train Set | Test Set | MAE | RMSE | MedAE |
+|---|---|---:|---:|---:|
+| CNUH | CARE-PD | 0.747 | 0.882 | 0.921 |
+| CARE-PD | CNUH | 1.014 | 1.170 | 0.746 |
+| Combined | Combined | 0.358 | 0.564 | 0.147 |
+
+The result shows a substantial domain gap under strict zero-shot transfer. Full
+analysis is documented in:
+
+```text
+carepd_17pt_experiments/docs/cross_dataset_validation_analysis.md
+carepd_17pt_experiments/docs/cross_dataset_validation_record_en.md
+carepd_17pt_experiments/docs/cross_dataset_validation_record_ko.md
+carepd_17pt_experiments/docs/cross_dataset_model_comparison.md
+carepd_17pt_experiments/docs/carepd_lodo_analysis.md
+carepd_17pt_experiments/results/cross_dataset_validation/
+```
+
+Completed follow-up analyses add five useful qualifications:
+
+- Combined GroupKFold performance is strongest on CARE-PD test samples
+  (`Ours V1 MAE 0.356`) but remains unstable on CNUH because CNUH has only
+  21 samples.
+- Score-balanced transfer shows that CNUH -> CARE-PD zero-shot error is worse
+  after class balancing (`MAE 0.747 -> balanced MAE 1.022`), indicating poor
+  severity calibration across classes.
+- Few-shot target-site affine calibration reduces transfer error with small
+  labeled calibration sets, for example CNUH -> CARE-PD improves to
+  approximately `MAE 0.622` with 10 CARE-PD calibration subjects.
+- Ours-vs-SOTA zero-shot comparison is complete. Ours V1 is best in the
+  CNUH -> CARE-PD direction and has the lowest average transfer MAE, while Lu
+  official is slightly better in the CARE-PD -> CNUH direction.
+- CARE-PD leave-one-dataset-out is complete for Ours V1 (`MAE 0.620`,
+  `RMSE 0.813`). It is harder than CARE-PD subject-level GroupKFold but easier
+  than strict CNUH -> CARE-PD zero-shot transfer.
+
+Follow-up scripts for improving the domain-gap story are documented in:
+
+```text
+carepd_17pt_experiments/docs/domain_gap_followup_experiments.md
+```
+
+The five runnable entry points are:
+
+```powershell
+cd carepd_17pt_experiments
+.\scripts\run_dataset_wise_breakdown.cmd
+.\scripts\run_cross_dataset_model_comparison_cuda.cmd
+.\scripts\run_fewshot_calibration.cmd
+.\scripts\run_carepd_lodo_cuda.cmd
+.\scripts\run_score_balanced_transfer.cmd
 ```
 
 ## Ethics and Data Availability

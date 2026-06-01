@@ -132,7 +132,8 @@ checkpointed D run used for this analysis has baseline MAE 0.369 and RMSE
 is a separate training run.
 
 The key result is asymmetric: COM centering gives near-perfect robustness to
-horizontal translation, but it does not by itself provide scale invariance.
+horizontal translation, but COM centering alone does not provide complete scale
+invariance.
 
 | Condition | MAE | RMSE | Delta MAE (%) | Delta RMSE (%) |
 |---|---:|---:|---:|---:|
@@ -186,9 +187,232 @@ stable for small scale shifts but still degrades at `s = 1.10`:
 | Scale 1.05 | 0.398 | 0.586 | 7.799 |
 | Scale 1.10 | 0.432 | 0.622 | 17.224 |
 
-Scale-robustness follow-up candidates are implemented in
-`docs/scale_robustness_experiment_plan.md`. These should be screened before any
-additional scale-robustness claim is added to the manuscript.
+### Scale-Robust Operating Point
+
+A follow-up full 5-fold experiment evaluated scale-robust variants using the
+same Ours V1 architecture. These variants do not change the model encoder; they
+only modify input normalization and, where noted, train-time coordinate scale
+augmentation.
+
+| Variant | Scale normalization | Train-time scale augmentation | MAE | RMSE | MedAE | Max scale Delta MAE (%) | Max translation Delta MAE (%) | Decision |
+|---|---|---|---:|---:|---:|---:|---:|---|
+| COM-only D checkpoint | none | none | 0.369 | 0.564 | 0.159 | 46.488 | 0.000 | Accurate but not scale-robust |
+| Scale augmentation | none | 0.85-1.15 | 0.402 | 0.605 | 0.205 | 3.399 | 0.000 | Robust but accuracy loss |
+| Hip-width normalization | hip width | none | 0.380 | **0.556** | 0.204 | 0.000 | 0.000 | Robust, moderate MAE loss |
+| Median-bone normalization + augmentation | median bone length | 0.85-1.15 | **0.366** | 0.567 | 0.139 | **0.000** | **0.000** | Recommended robust operating point |
+
+The best trade-off is median-bone normalization with moderate scale
+augmentation. It preserves the main model's accuracy almost exactly
+(`MAE 0.366` vs. `0.369` in the checkpointed COM-only run; `RMSE 0.567` vs.
+`0.564`) while eliminating measurable degradation across all tested scale
+factors (`s = 0.70` to `1.30`) and translation offsets (`Delta x = -0.20` to
+`+0.20`). This result supports the following stronger but precise claim:
+
+> COM centering removes global position shifts, and adding sequence-level
+> body-scale normalization based on median bone length removes the residual
+> scale sensitivity induced by simulated camera-distance changes, without
+> materially degrading prediction accuracy.
+
+Reporting decision: keep the original Ours V1 D result as the main performance
+table entry because it has the best MAE among all models. Use the
+median-bone-normalized variant in the COM robustness subsection as a robust
+operating point or deployment variant, not as a separate new architecture.
+Full outputs are stored in `docs/scale_robustness_full/` and summarized in
+`docs/scale_robustness_full_summary.md`.
+
+## Cross-Dataset Validation
+
+External generalization was evaluated with two zero-shot transfer protocols.
+No fine-tuning, domain adaptation, or test-set checkpoint selection was used.
+The combined GroupKFold row is the main subject-independent result with both
+domains represented in training.
+
+| Protocol | Train Set | Test Set | N train | N test | MAE | RMSE | MedAE |
+|---|---|---|---:|---:|---:|---:|---:|
+| Zero-shot transfer | CNUH | CARE-PD | 21 | 6,066 | 0.747 | 0.882 | 0.921 |
+| Reverse transfer | CARE-PD | CNUH | 6,066 | 21 | 1.014 | 1.170 | 0.746 |
+| Combined GroupKFold | CNUH + CARE-PD | CNUH + CARE-PD | subject-level 5-fold | 6,087 | 0.358 | 0.564 | 0.147 |
+
+Relative to the combined GroupKFold setting, zero-shot transfer substantially
+increased error:
+
+| Comparison | Delta MAE | Delta RMSE | Relative MAE increase | Relative RMSE increase |
+|---|---:|---:|---:|---:|
+| CNUH -> CARE-PD vs Combined | +0.390 | +0.318 | +109.0% | +56.3% |
+| CARE-PD -> CNUH vs Combined | +0.657 | +0.605 | +183.7% | +107.3% |
+
+Prediction-distribution analysis showed regression-to-the-middle behavior.
+The CNUH-trained model predicted CARE-PD samples in a narrow range
+(`0.975-1.205`, mean `1.144`), while the CARE-PD-trained model predicted CNUH
+samples around a higher narrow range (`1.446-2.233`, mean `1.759`). This means
+the transfer models remained numerically stable but were not calibrated to the
+unseen target domain.
+
+Manuscript-safe interpretation:
+
+> Zero-shot cross-dataset transfer revealed a substantial site and
+> representation domain gap. The proposed model achieved strong performance
+> when both CNUH and CARE-PD were represented in subject-independent
+> GroupKFold training, but direct transfer from one dataset to the other caused
+> regression-to-the-middle predictions. This indicates that clinical deployment
+> across sites should use site-balanced training, calibration, or explicit
+> domain adaptation rather than assuming unchanged zero-shot transfer.
+
+Likely domain-gap factors include dataset-size asymmetry, camera/viewpoint
+differences, CNUH MediaPipe-derived 2.5D-to-H36M17 coordinates versus CARE-PD
+SMPL/H36M-style 3D pose sequences, cohort heterogeneity, and site-specific
+annotation harmonization. Detailed analysis is stored in
+`docs/cross_dataset_validation_analysis.md`.
+
+### Completed Domain-Gap Follow-Up Analyses
+
+Five additional analyses have been completed to qualify the cross-dataset
+result. Some use existing prediction files, while the model-comparison and
+CARE-PD leave-one-dataset-out analyses required additional fixed-epoch training
+runs.
+
+#### 1. Dataset-Wise Breakdown Under Combined GroupKFold
+
+The combined GroupKFold result is dominated numerically by CARE-PD because
+CARE-PD contributes 6,066 of 6,087 sequences. Dataset-wise evaluation shows
+that Ours V1 is strongest on CARE-PD but remains unstable on the small CNUH
+subset:
+
+| Model | CARE-PD MAE | CARE-PD RMSE | CNUH MAE | CNUH RMSE |
+|---|---:|---:|---:|---:|
+| Ours V1 | **0.356** | 0.562 | 0.793 | **0.945** |
+| Lu official | 0.403 | **0.540** | 0.862 | 1.031 |
+| ST-GCN | 0.442 | 0.621 | 0.879 | 1.008 |
+| Temporal CNN | 0.420 | 0.581 | 1.624 | 2.199 |
+
+Interpretation: the main combined result is strong and Ours V1 remains the best
+MAE performer on CARE-PD, but the CNUH subset has only 21 samples and should
+not be overinterpreted as a stable dataset-level benchmark. This supports a
+careful claim: multi-domain training improves the dominant external benchmark
+performance, while CNUH-specific generalization remains sample-limited.
+
+#### 2. Score-Balanced Transfer Analysis
+
+Score-balanced metrics average per-class errors equally rather than weighting
+classes by the target-domain class distribution.
+
+| Protocol | Original MAE | Original RMSE | Score-balanced MAE | Score-balanced RMSE | Balanced - Original MAE |
+|---|---:|---:|---:|---:|---:|
+| CNUH -> CARE-PD | 0.747 | 0.882 | 1.022 | 1.024 | +0.275 |
+| CARE-PD -> CNUH | 1.014 | 1.170 | 1.025 | 1.034 | +0.010 |
+
+For CNUH -> CARE-PD, the score-balanced MAE is much higher than the original
+MAE because the model predicts most CARE-PD samples near score 1.1. This is
+relatively accurate for true score 1 but poor for true scores 0, 2, and 3.
+Therefore, the zero-shot transfer result should be interpreted as poor
+severity calibration across score levels, not merely as a small average error
+increase.
+
+#### 3. Few-Shot Target-Site Calibration
+
+We evaluated a lightweight target-site calibration step using only the existing
+zero-shot predictions. The calibration fits an affine mapping
+`y_calibrated = a * y_pred + b` on a small number of labeled target-site
+subjects and clips outputs to `[0, 3]`. No model weights are retrained.
+
+| Protocol | Calibration subjects | Base MAE | Calibrated MAE | Delta MAE | Base RMSE | Calibrated RMSE | Delta RMSE |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| CNUH -> CARE-PD | 1 | 0.747 | 0.791 | +0.044 | 0.881 | 1.023 | +0.142 |
+| CNUH -> CARE-PD | 3 | 0.748 | 0.672 | -0.076 | 0.883 | 0.845 | -0.037 |
+| CNUH -> CARE-PD | 5 | 0.751 | 0.659 | -0.092 | 0.884 | 0.814 | -0.070 |
+| CNUH -> CARE-PD | 10 | 0.748 | 0.622 | -0.126 | 0.882 | 0.763 | -0.119 |
+| CARE-PD -> CNUH | 1 | 1.015 | 1.038 | +0.023 | 1.171 | 1.260 | +0.090 |
+| CARE-PD -> CNUH | 3 | 1.017 | 1.077 | +0.060 | 1.170 | 1.290 | +0.120 |
+| CARE-PD -> CNUH | 5 | 1.029 | 0.990 | -0.039 | 1.179 | 1.162 | -0.017 |
+| CARE-PD -> CNUH | 10 | 0.999 | 0.836 | -0.163 | 1.149 | 0.991 | -0.158 |
+
+The useful deployment-oriented result is that calibration becomes beneficial
+once more than a minimal single-subject calibration set is available. In the
+CNUH -> CARE-PD direction, 3-10 target-site subjects consistently reduce MAE.
+In the CARE-PD -> CNUH direction, the trend is noisier because CNUH has only
+21 subjects, but 10 calibration subjects still reduce MAE by approximately
+0.16.
+
+Manuscript-safe follow-up interpretation:
+
+> Zero-shot transfer exposes a substantial domain gap, but the gap is partly
+> calibratable. A simple affine target-site calibration using a small number of
+> labeled target-site subjects reduced transfer error without retraining the
+> full model. This suggests a practical deployment path in which the model is
+> trained on multi-site data and lightly calibrated for a new clinical site.
+
+#### 4. Ours vs SOTA Cross-Dataset Transfer
+
+The SOTA transfer comparison has now been completed with the same zero-shot
+protocols. No fine-tuning, adaptation, or test-set checkpoint selection was
+used.
+
+| Category | Model | Train | Test | N train | N test | MAE | RMSE | MedAE |
+|---|---|---|---|---:|---:|---:|---:|---:|
+| Proposed | Ours V1 | CNUH | CARE-PD | 21 | 6,066 | **0.747** | **0.882** | 0.921 |
+| SOTA | Lu official | CNUH | CARE-PD | 21 | 6,066 | 0.898 | 1.016 | **0.596** |
+| SOTA | ST-GCN | CNUH | CARE-PD | 21 | 6,066 | 8.346 | 9.737 | 6.734 |
+| Proposed | Ours V1 | CARE-PD | CNUH | 6,066 | 21 | 0.910 | 1.034 | **0.639** |
+| SOTA | Lu official | CARE-PD | CNUH | 6,066 | 21 | **0.865** | **1.027** | 0.735 |
+| SOTA | ST-GCN | CARE-PD | CNUH | 6,066 | 21 | 1.203 | 1.385 | 1.119 |
+
+Interpretation: the proposed model is strongest in the small-source
+CNUH -> CARE-PD direction and has the lowest average transfer MAE across both
+directions (`0.829`) compared with Lu official (`0.882`) and ST-GCN (`4.774`).
+Lu official is slightly better in CARE-PD -> CNUH. ST-GCN is highly unstable in
+the CNUH -> CARE-PD setting, likely because its unbounded regression head
+extrapolates poorly when trained on only 21 CNUH samples.
+
+Manuscript-safe wording:
+
+> Under strict zero-shot transfer, all skeleton-based models showed substantial
+> domain degradation. The proposed bounded graph-temporal model achieved the
+> best average transfer MAE and was most stable in the small-source
+> CNUH-to-CARE-PD setting, whereas Lu official was slightly better in the
+> CARE-PD-to-CNUH direction. These results reinforce the need for site
+> calibration or domain adaptation, while showing that the proposed model is a
+> comparatively stable transfer baseline.
+
+#### 5. CARE-PD Leave-One-Dataset-Out
+
+CARE-PD leave-one-dataset-out holds out one CARE-PD source cohort at a time.
+This is a stronger within-CARE-PD external generalization test than random
+subject-level folds because the held-out cohort has no sequences represented
+during training.
+
+| Held-out CARE-PD cohort | N train | N test | MAE | RMSE | MedAE |
+|---|---:|---:|---:|---:|---:|
+| 3DGait | 5,976 | 90 | 0.775 | 0.947 | 0.847 |
+| BMCLab | 2,171 | 3,895 | 0.663 | 0.844 | 0.528 |
+| PD-GaM | 4,366 | 1,700 | 0.495 | 0.724 | 0.236 |
+| T-SDU-PD | 5,685 | 381 | 0.692 | 0.836 | 0.707 |
+| **Overall** | - | 6,066 | **0.620** | **0.813** | **0.508** |
+
+Comparison with related protocols:
+
+| Protocol | MAE | RMSE | MedAE | Interpretation |
+|---|---:|---:|---:|---|
+| Combined GroupKFold, CARE-PD subset | 0.356 | 0.562 | 0.146 | CARE-PD cohorts represented during training |
+| CARE-PD leave-one-dataset-out | 0.620 | 0.813 | 0.508 | Entire CARE-PD cohort held out |
+| CNUH -> CARE-PD zero-shot | 0.747 | 0.882 | 0.921 | Cross-site and pose-representation transfer |
+
+Interpretation: CARE-PD LODO is harder than subject-level GroupKFold but easier
+than CNUH -> CARE-PD zero-shot transfer. This supports the claim that
+multi-cohort CARE-PD training improves generalization to unseen CARE-PD cohorts,
+while a measurable cohort-level domain gap remains. The hardest held-out cohort
+is 3DGait (`MAE = 0.775`), whereas PD-GaM is easiest (`MAE = 0.495`).
+
+Completed follow-up outputs:
+
+```text
+docs/cross_dataset_model_comparison.md
+docs/cross_dataset_validation_record_en.md
+docs/cross_dataset_validation_record_ko.md
+docs/dataset_wise_breakdown_analysis.md
+docs/score_balanced_transfer_analysis.md
+docs/fewshot_calibration_analysis.md
+docs/carepd_lodo_analysis.md
+```
 
 ## Ours V1 A/B/C/D Ablation
 
@@ -215,6 +439,27 @@ Ablation B performs worst, especially in fold 5. This suggests that simply
 adding velocity to coordinates is not sufficient under the combined multi-cohort
 setting; higher-level sequence descriptors are needed for stable score
 estimation.
+
+## Ours V1 Architecture Ablation
+
+The input-feature ablation above is separate from the architecture ablation
+below. The architecture ablation keeps Configuration D fixed and removes model
+components step by step. The full Ours V1 row uses the canonical final 5-fold
+run from `groupkfold_h36m17_ours_lu_official_cuda`; the interrupted full-model
+rows inside `architecture_ablation_ours_cuda` are not used.
+
+| Model | Components | Folds | N | Params | Infer ms/sample | MAE | RMSE | MedAE |
+|---|---|---:|---:|---:|---:|---:|---:|---:|
+| MLP only | mean pooling + bounded MLP | 5 | 6,087 | 17,921 | 0.005 | 0.554 | 0.653 | 0.481 |
+| GraphConv + MLP | GraphConv, no joint attention, no Temporal Transformer | 5 | 6,087 | 25,985 | 2.306 | 0.450 | 0.580 | 0.349 |
+| GraphConv + Joint Attention + MLP | GraphConv + joint attention, no Temporal Transformer | 5 | 6,087 | 26,114 | 2.736 | 0.414 | 0.564 | 0.291 |
+| Full Ours V1 | GraphConv + Joint Attention + Temporal Transformer | 5 | 6,087 | 158,594 | 4.615 | **0.358** | 0.564 | **0.147** |
+
+This ablation confirms that the performance gain is not attributable only to
+the input feature set. GraphConv reduces MAE from `0.554` to `0.450`, joint
+attention reduces it further to `0.414`, and the full Temporal Transformer model
+achieves the best MAE (`0.358`) and MedAE (`0.147`). Relative to the MLP-only
+baseline, the full model reduces MAE by `35.4%`.
 
 ## Ours V1 Architecture Summary
 
@@ -313,9 +558,26 @@ Recommended supplementary figures:
 |---|---|
 | `05_fold_mae_by_model.png` | Fold-level stability |
 | `18_calibration_curve_by_model.png` | Calibration-style score trend |
+| `reviewer_figures/21_calibration_curve_ours.png` | Reviewer-facing calibration curve for Ours V1 |
+| `reviewer_figures/22_calibration_curve_models.png` | Calibration curve comparison across deep/SOTA models |
 | `20_mae_advantage_vs_baselines.png` | Compact MAE gain over baselines |
 | `16_dataset_mae_breakdown.png` | Dataset-level breakdown; supplementary because CNUH has only 21 samples |
 | `19_class_distribution.png` | Class imbalance explanation |
+
+Completed reviewer-response learning curve:
+
+```text
+docs/learning_curve_ours_analysis.md
+docs/reviewer_figures/24_learning_curve_ours_mae.png
+docs/reviewer_figures/25_learning_curve_ours_rmse.png
+```
+
+The learning curve varies the training-subject fraction while keeping the
+validation folds fixed. MAE decreases monotonically from `0.476` at 10%
+training subjects to `0.360` at 100% training subjects, a `24.5%` relative
+reduction. RMSE decreases from `0.672` to `0.530`, a `21.1%` relative
+reduction. This supports the interpretation that small-cohort performance is
+data-limited and improves with larger multi-site training data.
 
 Additional diagnostic figures are listed in
 `docs/final_integrated_figures/README.md`.

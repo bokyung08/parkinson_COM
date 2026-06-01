@@ -26,10 +26,24 @@ comparison.
 The current manuscript-facing reports are:
 
 - `docs/final_integrated_results.md`
+- `docs/final_integrated_results_ko.md`
 - `docs/ours_abcd_summary.md`
 - `docs/per_class_confusion_analysis.md`
 - `docs/com_robustness_status.md`
-- `docs/scale_robustness_experiment_plan.md`
+- `docs/com_robustness_final_analysis.md`
+- `docs/cross_dataset_validation_analysis.md`
+- `docs/cross_dataset_validation_record_en.md`
+- `docs/cross_dataset_validation_record_ko.md`
+- `docs/carepd_lodo_analysis.md`
+- `docs/calibration_reliability_analysis.md`
+- `docs/learning_curve_ours_analysis.md`
+- `docs/architecture_ablation_analysis.md`
+- `docs/reviewer_revision_action_plan.md`
+- `docs/carepd_cohort_split_table.md`
+- `docs/lu_reimplementation_fairness.md`
+- `docs/reviewer_experiment_figures.md`
+- `docs/domain_gap_followup_experiments.md`
+- `docs/scale_robustness_full_summary.md`
 - `docs/final_integrated_figures/`
 
 Recommended main-text figures:
@@ -50,6 +64,26 @@ Recommended supplementary figures:
 | `docs/final_integrated_figures/20_mae_advantage_vs_baselines.png` | MAE gain over selected baselines |
 | `docs/final_integrated_figures/16_dataset_mae_breakdown.png` | Dataset-level breakdown |
 | `docs/final_integrated_figures/19_class_distribution.png` | Class imbalance explanation |
+| `docs/reviewer_figures/21_calibration_curve_ours.png` | Ours V1 calibration curve |
+| `docs/reviewer_figures/22_calibration_curve_models.png` | Calibration curve comparison |
+
+Reviewer-response learning curve is complete. MAE decreases from `0.476` with
+10% training subjects to `0.360` with the full training set, a `24.5%` relative
+reduction. See `docs/learning_curve_ours_analysis.md` and:
+
+| Figure | Use |
+|---|---|
+| `docs/reviewer_figures/24_learning_curve_ours_mae.png` | Ours V1 MAE learning curve |
+| `docs/reviewer_figures/25_learning_curve_ours_rmse.png` | Ours V1 RMSE learning curve |
+
+Reviewer-requested architecture ablation runner:
+
+```powershell
+.\scripts\run_architecture_ablation_cuda.cmd
+```
+
+This runs `ours_mlp`, `ours_gcn_mlp`, `ours_gcn_attn_mlp`, and the full `ours`
+model under the same subject-level GroupKFold setup.
 
 Final main-table decision:
 
@@ -89,9 +123,24 @@ centering was effectively invariant to horizontal translation, but scale
 perturbations still increased error. See `docs/com_robustness_status.md` and
 `docs/com_robustness/`.
 
-Scale-robustness follow-up candidates are implemented but should be screened
-before being used in the manuscript. See
-`docs/scale_robustness_experiment_plan.md`.
+Scale-robustness follow-up is complete. The recommended robust operating point
+uses the same Ours V1 architecture with median-bone scale normalization and
+moderate train-time scale augmentation. It preserves accuracy
+(`MAE 0.366`, `RMSE 0.567`) and shows no measurable degradation under the tested
+scale and translation perturbations. See
+`docs/scale_robustness_full_summary.md` and `docs/scale_robustness_full/`.
+
+Cross-dataset follow-up analyses are complete for the current Ours-focused
+scope. The completed analyses
+show that combined GroupKFold performance is strongest on CARE-PD
+(`Ours V1 MAE 0.356`), score-balanced transfer exposes poor zero-shot severity
+calibration, small target-site affine calibration can reduce transfer error
+without retraining, and Ours V1 has the best average zero-shot transfer MAE
+against ST-GCN and Lu official. CARE-PD leave-one-dataset-out is complete for
+Ours V1 (`MAE 0.620`, `RMSE 0.813`) and shows moderate cohort-level shift inside
+CARE-PD. See `docs/cross_dataset_validation_analysis.md`,
+`docs/cross_dataset_model_comparison.md`, `docs/carepd_lodo_analysis.md`, and
+`docs/domain_gap_followup_experiments.md`.
 
 ## Environment
 

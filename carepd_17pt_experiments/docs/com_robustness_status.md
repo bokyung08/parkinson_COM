@@ -37,7 +37,7 @@ docs\com_robustness\
 
 COM centering is robust to global horizontal translation but not to scale
 changes. This means it should be described as a position-normalization method,
-not as a complete camera-distance normalization method.
+not as a complete camera-distance normalization method when used alone.
 
 | Condition | MAE | RMSE | Delta MAE (%) | Delta RMSE (%) |
 |---|---:|---:|---:|---:|
@@ -57,6 +57,48 @@ Recommended manuscript wording:
 > shifts, while scale perturbations remained challenging. This indicates that
 > the current representation is translation-invariant but requires additional
 > body-size or bone-length normalization for camera-distance robustness.
+
+## Scale-Robust Follow-Up
+
+Full 5-fold candidate runs have now been completed for scale robustness. The
+best trade-off is the same Ours V1 architecture with median-bone scale
+normalization and moderate train-time scale augmentation.
+
+| Variant | Scale normalization | Train-time scale augmentation | MAE | RMSE | Max scale Delta MAE (%) | Max translation Delta MAE (%) | Decision |
+|---|---|---|---:|---:|---:|---:|---|
+| COM-only D checkpoint | none | none | 0.369 | 0.564 | 46.488 | 0.000 | Position-robust only |
+| Scale augmentation | none | 0.85-1.15 | 0.402 | 0.605 | 3.399 | 0.000 | Robust but accuracy loss |
+| Hip-width normalization | hip width | none | 0.380 | 0.556 | 0.000 | 0.000 | Robust, moderate MAE loss |
+| Median-bone normalization + augmentation | median bone length | 0.85-1.15 | 0.366 | 0.567 | 0.000 | 0.000 | Recommended robust operating point |
+
+Interpretation:
+
+- COM-only D should be used to support robustness against global position
+  shifts, not full scale invariance.
+- Median-bone normalization removes the residual scale sensitivity because the
+  entire skeleton is divided by a sequence-level body-size estimate after COM
+  centering.
+- The median-bone variant is not a new architecture; it is the same proposed
+  architecture with a stronger input normalization policy.
+
+Recommended final manuscript wording:
+
+> COM centering removed global horizontal translation effects. To address the
+> remaining camera-distance sensitivity, we further evaluated a body-scale
+> normalized operating point using median bone length. This variant preserved
+> prediction accuracy (MAE = 0.366, RMSE = 0.567) and produced no measurable
+> MAE degradation under scale factors from 0.70 to 1.30 or horizontal shifts
+> from -0.20 to +0.20.
+
+Detailed outputs:
+
+```text
+docs\scale_robustness_full_summary.md
+docs\scale_robustness_full\
+  scale_aug_moderate\
+  median_bone_aug_moderate\
+  hip_width\
+```
 
 ## Step 1: Save D Fold Checkpoints
 
@@ -126,5 +168,7 @@ Therefore saved predictions cannot be transformed into COM-robustness results.
 
 ## Reporting Rule
 
-Report the values from `docs\com_robustness\summary.csv`. Do not report
-robustness from the older prediction-only result folders.
+For the COM-only perturbation analysis, report the values from
+`docs\com_robustness\summary.csv`. For the scale-robust operating point, report
+`docs\scale_robustness_full_summary.md` and the median-bone-normalized run.
+Do not report robustness from the older prediction-only result folders.

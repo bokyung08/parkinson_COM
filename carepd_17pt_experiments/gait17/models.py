@@ -114,6 +114,66 @@ class OursHybridEncoder(nn.Module):
         return self.encoder(x).mean(dim=1)
 
 
+class OursMLPOnly(nn.Module):
+    """Architecture-ablation baseline: no graph, no joint attention, no Transformer."""
+
+    def __init__(self, in_channels: int = 9, hidden: int = 128):
+        super().__init__()
+        self.head = nn.Sequential(
+            nn.Linear(in_channels, hidden),
+            nn.ReLU(),
+            nn.Dropout(0.4),
+            nn.Linear(hidden, hidden),
+            nn.ReLU(),
+            nn.Dropout(0.4),
+            nn.Linear(hidden, 1),
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = x.mean(dim=(1, 2))
+        return 3.0 * torch.sigmoid(self.head(x).squeeze(-1))
+
+
+class OursGraphConvMLP(nn.Module):
+    """Architecture ablation: GraphConv encoder with temporal/joint mean pooling."""
+
+    def __init__(self, in_channels: int = 9, hidden: int = 128):
+        super().__init__()
+        self.register_buffer("A", adjacency())
+        self.gcn1 = GraphConv(in_channels, 64)
+        self.gcn2 = GraphConv(64, hidden)
+        self.norm1 = nn.LayerNorm(64)
+        self.norm2 = nn.LayerNorm(hidden)
+        self.head = nn.Sequential(nn.Linear(hidden, 128), nn.ReLU(), nn.Dropout(0.4), nn.Linear(128, 1))
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = F.relu(self.norm1(self.gcn1(x, self.A)))
+        x = F.relu(self.norm2(self.gcn2(x, self.A)))
+        x = x.mean(dim=(1, 2))
+        return 3.0 * torch.sigmoid(self.head(x).squeeze(-1))
+
+
+class OursGraphJointAttnMLP(nn.Module):
+    """Architecture ablation: GraphConv + joint attention without Temporal Transformer."""
+
+    def __init__(self, in_channels: int = 9, hidden: int = 128):
+        super().__init__()
+        self.register_buffer("A", adjacency())
+        self.gcn1 = GraphConv(in_channels, 64)
+        self.gcn2 = GraphConv(64, hidden)
+        self.norm1 = nn.LayerNorm(64)
+        self.norm2 = nn.LayerNorm(hidden)
+        self.joint_attn = nn.Linear(hidden, 1)
+        self.head = nn.Sequential(nn.Linear(hidden, 128), nn.ReLU(), nn.Dropout(0.4), nn.Linear(128, 1))
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = F.relu(self.norm1(self.gcn1(x, self.A)))
+        x = F.relu(self.norm2(self.gcn2(x, self.A)))
+        weights = torch.softmax(self.joint_attn(x), dim=2)
+        x = (x * weights).sum(dim=2).mean(dim=1)
+        return 3.0 * torch.sigmoid(self.head(x).squeeze(-1))
+
+
 class OursGait17(nn.Module):
     def __init__(self, in_channels: int = 9, hidden: int = 128):
         super().__init__()
@@ -288,6 +348,12 @@ def ordinal_focal_loss(logits: torch.Tensor, y: torch.Tensor, gamma: float = 2.0
 def make_model(name: str, in_channels: int):
     if name == "temporal_cnn":
         return TemporalCNNRegressor(in_channels=in_channels)
+    if name == "ours_mlp":
+        return OursMLPOnly(in_channels=in_channels)
+    if name == "ours_gcn_mlp":
+        return OursGraphConvMLP(in_channels=in_channels)
+    if name == "ours_gcn_attn_mlp":
+        return OursGraphJointAttnMLP(in_channels=in_channels)
     if name == "ours":
         return OursGait17(in_channels=in_channels)
     if name == "stgcn":
