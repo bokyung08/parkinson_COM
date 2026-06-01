@@ -1,4 +1,34 @@
+<div align="center">
+
 # Parkinson COM-Centered Gait Severity Assessment
+
+**RGB-only decision-support system for MDS-UPDRS gait severity estimation**
+
+<p>
+  <img alt="Python" src="https://img.shields.io/badge/Python-3.9%2B-3776AB?style=for-the-badge&logo=python&logoColor=white">
+  <img alt="PyTorch" src="https://img.shields.io/badge/PyTorch-2.x-EE4C2C?style=for-the-badge&logo=pytorch&logoColor=white">
+  <img alt="CUDA" src="https://img.shields.io/badge/CUDA-GPU%20Ready-76B900?style=for-the-badge&logo=nvidia&logoColor=white">
+  <img alt="Target Journal" src="https://img.shields.io/badge/Target-AI%20in%20Medicine-4B5563?style=for-the-badge">
+</p>
+
+<p>
+  <img alt="Task" src="https://img.shields.io/badge/Task-PD%20Gait%20Severity-7C3AED?style=for-the-badge">
+  <img alt="Input" src="https://img.shields.io/badge/Input-Single%20RGB%20Camera-0EA5E9?style=for-the-badge">
+  <img alt="Skeleton" src="https://img.shields.io/badge/Skeleton-H36M17-14B8A6?style=for-the-badge">
+  <img alt="Privacy" src="https://img.shields.io/badge/Privacy-Keypoints%20Only-2563EB?style=for-the-badge">
+</p>
+
+<p>
+  <img alt="Subjects" src="https://img.shields.io/badge/Subjects-131-111827?style=flat-square">
+  <img alt="Sequences" src="https://img.shields.io/badge/Sequences-6%2C087-111827?style=flat-square">
+  <img alt="MAE" src="https://img.shields.io/badge/MAE-0.358-16A34A?style=flat-square">
+  <img alt="RMSE" src="https://img.shields.io/badge/RMSE-0.564-F59E0B?style=flat-square">
+  <img alt="MedAE" src="https://img.shields.io/badge/MedAE-0.147-16A34A?style=flat-square">
+</p>
+
+<sub>COM-centered normalization | GraphConv | Joint Attention | Temporal Transformer | Bounded Regression</sub>
+
+</div>
 
 Research code for an RGB-only vision-based decision-support system that
 estimates Parkinson's disease gait severity from pose sequences. The system
