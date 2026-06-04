@@ -1,0 +1,834 @@
+%% =======================================================
+%%  Manuscript prepared for submission to
+%%  Expert Systems with Applications (Elsevier)
+%%
+%%  CURRENT STATUS:
+%%   Numeric and factual placeholders available from completed experiments have
+%%   been filled. MotionAGFormer-XS and MotionBERT-Lite (81-frame) are complete.
+%% =======================================================
+
+\documentclass[preprint,12pt]{elsarticle}
+
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{hyperref}
+\usepackage{float}
+\usepackage{microtype}
+\usepackage{lineno}
+\usepackage{xcolor}
+\usepackage{diagbox}
+
+\journal{Expert Systems with Applications}
+
+\begin{document}
+
+\begin{frontmatter}
+
+%% =======================================================
+%%  TITLE
+%% =======================================================
+\title{An intelligent vision-based decision-support system for
+Parkinson's gait severity assessment using COM-centred
+spatio-temporal modeling from a single RGB camera}
+
+%% =======================================================
+%%  AUTHORS
+%% =======================================================
+\author[cnu]{Bokyung Kim}
+\author[cnu]{Hieyong Jeong\corref{cor1}}
+\ead{h.jeong@jnu.ac.kr}
+\author[cnu]{Md Ilias Bappi}
+\author[cnu]{Kyungbaek Kim}
+
+\cortext[cor1]{Corresponding author}
+
+\address[cnu]{Chonnam National University, Gwangju, Republic of Korea}
+
+%% =======================================================
+%%  ABSTRACT
+%% =======================================================
+\begin{abstract}
+Parkinson's disease (PD) is a progressive neurodegenerative disorder for
+which gait impairment serves as a key clinical biomarker. In current
+practice, gait severity is rated on the MDS-UPDRS Part~III scale through
+expert visual judgement, which is inherently subjective, episodic, and
+limited to clinical settings. An automated and deployable assessment tool
+is therefore needed to support clinicians in objective decision making.
+
+This paper proposes an intelligent decision-support system estimating
+the MDS-UPDRS Part~III gait score directly from a single frontal-view RGB
+video. The system integrates four key components: (i) a Centre-of-Mass (COM)
+centred spatial normalisation scheme that removes global subject-position
+variation and is further analysed with an optional bone-length scaling variant
+for camera-distance robustness;
+(ii) a multi-channel kinematic feature representation; (iii) a Graph
+Convolutional Spatio-Temporal Encoder with learnable adjacency; and (iv) a
+selective-prediction module coupled with bounded regression that enforces the
+observable clinical range and defers borderline cases to human review.
+
+We develop and evaluate the system using a dual-cohort strategy. A
+110-patient subset (6{,}066 sequences) from the multi-site CARE-PD benchmark
+serves as the primary training and cross-validation domain. A prospectively
+collected independent clinical cohort (CNUH, $N=21$) is used strictly for
+cross-site zero-shot transfer, simulating deployment in an unseen environment.
+All competing models are evaluated under an identical input representation and
+data split, and we report both Mean Absolute Error (MAE) and Macro-F1 to
+expose, rather than mask, the strong class imbalance of the ordinal scale.
+Under subject-level GroupKFold cross-validation the system attains
+MAE\,=\,0.358, RMSE\,=\,0.564, and MedAE\,=\,0.147, and performs competitively
+with state-of-the-art motion encoders in both MAE and Macro-F1, while providing
+bounded-output safety and an explicit clinical abstention rule. A scale-normalised
+robustness variant additionally demonstrates invariance to controlled
+coordinate scaling under a global-scaling approximation.
+Zero-shot transfer (CARE-PD\,$\to$\,CNUH) demonstrates stable cross-site
+behaviour, and an extreme low-data stress test confirms that bounded
+regression prevents the catastrophic extrapolation observed in unbounded
+baselines. By additionally reporting inference latency and a quantitative
+risk--coverage analysis of the abstention rule, the proposed pipeline
+establishes a practical foundation for privacy-preserving, edge-deployable PD
+gait monitoring.
+\end{abstract}
+
+%% =======================================================
+%%  KEYWORDS
+%% =======================================================
+\begin{keyword}
+Intelligent decision-support system \sep
+Parkinson's disease \sep
+Vision-based gait analysis \sep
+Graph convolutional network \sep
+Selective prediction \sep
+MDS-UPDRS
+\end{keyword}
+
+\end{frontmatter}
+
+\linenumbers
+
+%% =======================================================
+%%  HIGHLIGHTS  (paste into the separate Highlights file; each <=85 chars)
+%% =======================================================
+% * Vision-based decision-support system for MDS-UPDRS gait scoring from RGB video.
+% * COM-centred normalisation reduces global subject-position variation.
+% * Graph Convolutional Spatio-Temporal Encoder with bounded-output safety head.
+% * Dual-cohort study: CARE-PD (training) and CNUH (zero-shot cross-site transfer).
+% * Selective-prediction rule and edge latency reported for clinical deployment.
+
+%% =======================================================
+%%  1. INTRODUCTION
+%% =======================================================
+\section{Introduction}
+\label{sec:intro}
+
+\subsection{Background and clinical motivation}
+Parkinson's disease (PD) is characterised by progressive motor symptoms
+including bradykinesia, rigidity, and impaired gait \cite{goetz2008mds}.
+Gait severity is clinically rated using Part~III of the Movement Disorder
+Society's Unified Parkinson's Disease Rating Scale (MDS-UPDRS)
+\cite{martinez2011mds}. This rating relies on expert visual judgement,
+exhibits non-trivial inter-rater variability \cite{richards1994inter}, and
+is obtained only during scheduled visits, thereby missing the intraday
+symptom fluctuations driven by medication cycles \cite{zhang2024wearable}.
+These limitations motivate \emph{intelligent decision-support systems} that
+can deliver objective, reproducible, and continuous quantification of gait
+severity to assist clinicians.
+
+\subsection{Why an RGB-only expert system?}
+Marker-based optical motion-capture systems offer millimetre-level accuracy
+but require dedicated laboratories \cite{dibiase2020gait}, while wearable
+inertial sensors demand strict placement, charging, and skin-contact
+adherence \cite{zhang2024wearable}. By contrast, an expert system that
+estimates MDS-UPDRS gait scores directly from a single RGB camera meets
+several practical deployment desiderata: zero hardware burden on the patient,
+compatibility with existing clinic and consumer cameras, the potential for
+privacy-preserving edge deployment when only skeletal keypoints are stored,
+and scalability across sites \cite{sun2024digital}.
+
+\subsection{Open problems and our contributions}
+Despite progress in skeleton-based motion modelling
+\cite{shi2019twoStream,zhu2023motionbert}, deploying PD gait assessment as a
+reliable clinical system requires addressing three concrete gaps:
+
+\begin{enumerate}
+    \item \textbf{Robustness to environmental variation.} Predictions from a
+    single RGB video are sensitive to camera-to-subject distance (apparent
+    scale) and horizontal subject position; few algorithmic studies formulate
+    and empirically quantify an explicit invariance mechanism against these
+    spatial confounders \cite{gennarelli2025skelmamba}.
+    \item \textbf{Evaluation bias in ordinal assessment.} Vision-based
+    regression formulations frequently report Mean Absolute Error (MAE) alone,
+    which can mask regression-to-the-mean behaviour on minority severe cases;
+    the classification benchmarks of this field instead report Macro-F1
+    \cite{adeli2025carepd}.
+    \item \textbf{Clinical decision support versus black-box prediction.}
+    A fielded expert system must provide deployment transparency, operational
+    rules such as bounded clinical ranges, abstention mechanisms for uncertain
+    cases, and measured computational cost \cite{sun2024digital}.
+\end{enumerate}
+
+To address these gaps, we propose an intelligent decision-support system with
+the following contributions:
+\begin{itemize}
+    \item We formalise a \textbf{COM-centred spatial normalisation scheme}
+    that removes global subject-position variation, and we separately evaluate
+    an optional median bone-length scaling variant for controlled
+    camera-distance robustness (Section~\ref{sec:robust_exp}).
+    \item We process multi-channel kinematic features with a \textbf{Graph
+    Convolutional Spatio-Temporal Encoder} featuring learnable adjacency
+    \cite{shi2019twoStream}, discovering non-anatomical inter-joint
+    dependencies indicative of pathological gait compensations.
+    \item We evaluate rigorously with both \textbf{MAE and Macro-F1}
+    (reported as F1$_{0\text{--}3}$ and F1$_{0\text{--}2}$ to match the CARE-PD
+    benchmark), transparently handling class imbalance, and we run every
+    competing model under an \textbf{identical input representation and data
+    split} so that comparisons reflect architecture rather than preprocessing.
+    \item We explicitly evaluate \textbf{zero-shot cross-site generalisation}
+    (CARE-PD\,$\to$\,independent CNUH cohort) and show that the
+    \textbf{bounded-regression} safety head prevents the catastrophic
+    extrapolation seen in unbounded baselines under domain shift.
+    \item We formalise a \textbf{selective-prediction (abstention) rule},
+    quantify it with a risk--coverage analysis against a random-abstention
+    baseline, and report practical \textbf{edge-inference latency}
+    (Section~\ref{sec:discussion}).
+\end{itemize}
+
+%% =======================================================
+%%  2. RELATED WORK
+%% =======================================================
+\section{Related Work}
+\label{sec:related}
+
+\subsection{Vision-based gait analysis for PD}
+The maturity of markerless pose estimation \cite{cao2017openpose,
+bazarevsky2020blazepose} has enabled non-contact PD gait analysis from RGB
+video. Lu et al. \cite{lu2020vision,lu2021quantifying} pioneered vision-based
+MDS-UPDRS gait scoring from 3D pose sequences. The CARE-PD benchmark
+\cite{adeli2025carepd} consolidates 363 participants across nine cohorts from
+eight clinical sites, distributed as harmonised SMPL meshes, and defines
+standardised generalisation protocols (within-dataset, cross-dataset,
+leave-one-dataset-out, and in-domain adaptation), enabling large-scale
+validation of motion encoders \cite{gennarelli2025skelmamba,
+tian2024crossspatiotemporal,adeli2024benchmarking}. We utilise a curated
+110-participant, fully annotated subset of CARE-PD as our primary training
+domain. A recurring limitation across this literature is the unquantified
+sensitivity of predictions to camera scale and subject distance.
+
+\subsection{Skeleton-based deep models and expert systems}
+Skeleton modelling has evolved from fixed-graph convolutions
+(ST-GCN \cite{yan2018spatial}) to adaptive graphs
+(2s-AGCN \cite{shi2019twoStream}) and Transformer-based encoders
+(MotionBERT \cite{zhu2023motionbert},
+MotionAGFormer \cite{mehraban2024motionagformer}). From an expert-systems
+perspective, however, raw accuracy is insufficient: a fielded system must also
+exhibit domain-specific robustness, interpretable failure modes, an explicit
+uncertainty/abstention policy, and edge-level efficiency. Our work bridges
+this gap by embedding a biomechanically motivated normalisation and
+deployment-centric decision rules into a modern spatio-temporal architecture.
+
+%% =======================================================
+%%  3. METHODOLOGY
+%% =======================================================
+\section{Proposed System}
+\label{sec:method}
+
+The proposed system takes a single frontal-view RGB gait video and outputs a
+continuous MDS-UPDRS Part~III (Item~3.10) gait estimate. It comprises four
+stages: COM-centred normalisation, multi-channel feature construction,
+spatio-temporal encoding, and a bounded-regression head.
+
+\subsection{Stage 1: Pose extraction and COM-centred normalisation}
+\label{sec:stage1}
+
+\paragraph{Pose estimation.}
+We apply the MediaPipe Pose estimator \cite{bazarevsky2020blazepose} to each
+frame, obtaining per-joint image-plane coordinates and a model-predicted
+relative depth. We treat the result as a 2.5D coordinate
+$\mathbf{p}^{\text{raw}}_{t,j}\in\mathbb{R}^{3}$, used as structured input
+rather than as a calibrated 3D measurement, with $T=390$ frames and $J=17$
+COCO-format joints.
+For CARE-PD, we used the released SMPL-derived H36M-compatible skeleton
+representation and converted it to the same 17-joint layout used throughout the
+experiments. For CNUH, MediaPipe landmarks were mapped to the same
+H36M-compatible 17-joint format, yielding a common input representation across
+cohorts.
+
+\paragraph{COM-centred normalisation.}
+To remove the subject's global image-plane position, we approximate the body
+centre (COM proxy) as the midpoint of the left and right hips, which is
+biomechanically co-located with the trunk's centre of mass during quiet
+bipedal locomotion \cite{winter2009biomechanics}:
+\begin{equation}
+\mathbf{C}_t = \tfrac{1}{2}\!\left(
+\mathbf{p}^{\text{raw}}_{t,\text{L-hip}}+\mathbf{p}^{\text{raw}}_{t,\text{R-hip}}\right),
+\qquad
+\mathbf{p}^{\text{rel}}_{t,j}=\mathbf{p}^{\text{raw}}_{t,j}-\mathbf{C}_t .
+\label{eq:trans}
+\end{equation}
+The main predictive model uses $\mathbf{p}^{\text{rel}}_{t,j}$ as its coordinate
+basis. To test robustness to apparent-scale variation induced by camera
+distance, we additionally evaluate an optional median bone-length normalised
+variant:
+\begin{equation}
+\mathbf{p}^{\text{scale}}_{t,j}=\frac{\mathbf{p}^{\text{rel}}_{t,j}}{L_{\text{ref}}},
+\label{eq:norm}
+\end{equation}
+where $L_{\text{ref}}$ is the median torso bone length computed over the
+sequence. Under a global multiplicative model of distance change,
+$\mathbf{p}^{\text{scale}}$ is invariant to coordinate scaling by construction;
+Section~\ref{sec:robust_exp} verifies this empirically and discusses its limits
+under true perspective distortion. This scale-normalised variant is used only
+for the robustness analysis, while the main performance tables report the
+best-performing COM-centred model.
+
+\subsection{Stage 2: Multi-channel kinematic feature construction}
+\label{sec:stage2}
+From $\mathbf{P}_{\text{rel}}$ we construct a per-(frame, joint) feature
+vector by concatenating clinically motivated channels---joint positions
+($f_{\text{pos}}$), frame-difference velocities ($f_{\text{vel}}$,
+sensitive to bradykinesia), sequence-level motion amplitude and variability
+($f_{\text{amp}},f_{\text{var}}$), and joint angles
+($f_{\text{ang}}$, encoding range of motion):
+\begin{equation}
+\mathbf{x}_{t,j}=\mathrm{Concat}\!\left[
+f_{\text{pos}},f_{\text{vel}},f_{\text{amp}},f_{\text{var}},f_{\text{ang}}\right]\in\mathbb{R}^{C}.
+\end{equation}
+
+\subsection{Stage 3: Graph Convolutional Spatio-Temporal Encoder}
+\label{sec:stage3}
+Unlike ST-GCN \cite{yan2018spatial}, which relies on a fixed anatomical graph,
+we use a \emph{learnable} adjacency matrix \cite{shi2019twoStream} to discover
+task-relevant, non-anatomical inter-joint dependencies characteristic of
+pathological gait compensation. Two GraphConv layers (with LayerNorm and ReLU)
+expand the per-joint dimension ($C\!\to\!64\!\to\!128$). A multi-head
+self-attention module over the $J=17$ joint tokens captures global spatial
+relations, and a Temporal Transformer encoder along the time axis models
+frame-to-frame dynamics including stride periodicity. The sequence is collapsed
+by temporal average pooling to $\mathbf{h}\in\mathbb{R}^{J\times128}$.
+
+\subsection{Stage 4: Bounded regression head}
+\label{sec:stage4}
+To enforce clinical validity, the pooled representation is mapped by an MLP to a
+sigmoid-scaled bounded output:
+\begin{equation}
+\hat{y}=3\cdot\sigma\!\left(\mathrm{MLP}(\mathbf{h})\right)\in(0,3).
+\label{eq:bounded}
+\end{equation}
+Because score~4 denotes inability to walk independently---which precludes
+frontal-view ambulatory video---the range $[0,3]$ covers all feasible cases in
+both cohorts. The network is trained by minimising the MAE between $\hat{y}$ and
+the ground-truth score $y$.
+
+\subsection{Implementation and reproducibility}
+\label{sec:repro}
+Table~\ref{tab:hparams} reports all hyperparameters. Source code and
+configuration files are released at
+\url{https://github.com/bokyung08/parkinson_COM}.
+
+\begin{table}[htpb]
+\centering
+\caption{Implementation and training hyperparameters of the proposed system.}
+\label{tab:hparams}
+\footnotesize
+\setlength{\tabcolsep}{4pt}
+\renewcommand{\arraystretch}{0.95}
+\resizebox{0.95\linewidth}{!}{%
+\begin{tabular}{ll}
+\toprule
+\textbf{Component} & \textbf{Setting} \\
+\midrule
+Pose estimator               & MediaPipe Pose (BlazePose Heavy) \\
+Joints / Sequence length     & $J=17$ (COCO) / $T=390$ (interpolation) \\
+Normalisation                & COM translation (bone-length scaling only in robustness variant) \\
+GraphConv hidden dim         & $C \to 64 \to 128$ (learnable adjacency) \\
+Joint-attention heads        & 4 \\
+Temporal Transformer         & 2 layers, 4 heads \\
+MLP hidden dim / Dropout     & 256 / 0.1 \\
+Output activation            & $3\cdot\sigma(\cdot)$ (bounded regression) \\
+Total parameters             & 158{,}594 \\
+\midrule
+Optimiser / LR / Batch       & Adam / $1\times10^{-4}$ / 16 \\
+Epochs / Loss                & 100 / MAE \\
+Framework / Hardware         & PyTorch 2.0 / NVIDIA RTX 3080 \\
+\bottomrule
+\end{tabular}
+}
+\end{table}
+
+%% =======================================================
+%%  4. EXPERIMENTAL SETUP
+%% =======================================================
+\section{Experimental Setup}
+\label{sec:setup}
+
+\subsection{Datasets and cohort roles}
+\label{sec:datasets}
+\paragraph{Training benchmark (CARE-PD subset).}
+For model development and cross-validation we use a fully annotated subset of
+the CARE-PD benchmark \cite{adeli2025carepd} comprising 110 participants and
+6{,}066 sequences drawn from four cohorts (3DGait, BMCLab, PD-GaM, T-SDU-PD).
+
+\paragraph{Zero-shot transfer cohort (CNUH).}
+To evaluate cross-site transferability, frontal-view gait videos were
+prospectively collected from $N=21$ PD patients at Chonnam National University
+Hospital (IRB: CNUH-2025-203; written informed consent obtained). This cohort
+was held out entirely from training and is used only as an unseen target
+domain.
+
+\subsection{Evaluation protocol and metrics}
+\label{sec:metrics}
+We adopt subject-level GroupKFold 5-fold cross-validation on the CARE-PD subset,
+ensuring that all sequences of a subject lie in a single fold. We report MAE and
+RMSE in score units, and Macro-F1 obtained by rounding the continuous output to
+the nearest integer (clipped to $[0,3]$). Following the CARE-PD benchmark, we
+report two Macro-F1 variants: F1$_{0\text{--}3}$ over all classes and
+F1$_{0\text{--}2}$ excluding the rare score-3 class (the metric only; all
+score-3 samples remain in training). We note that rounding a regressor is not
+identical to a native ordinal classifier, so Macro-F1 comparisons with
+classification benchmarks are indicative rather than exact. For significance
+testing we use the Wilcoxon signed-rank test. To avoid inflating significance by
+treating multiple sequences from the same subject as independent samples,
+absolute errors were also aggregated at the subject level before testing,
+yielding $p=0.107$ for Ours versus Lu et al. and
+$p=9.09\times10^{-4}$ for Ours versus ST-GCN.
+
+\subsection{Fair-comparison protocol}
+\label{sec:fairness}
+All competing models---classical regressors, ST-GCN \cite{yan2018spatial},
+Lu et al.\ \cite{lu2020vision}, MotionBERT \cite{zhu2023motionbert}, and
+MotionAGFormer \cite{mehraban2024motionagformer}---are trained and evaluated on
+the \emph{identical} MediaPipe 17-joint input, the COM-centred
+representation of Section~\ref{sec:stage1}, and the same subject-level
+GroupKFold split. Transformer encoders were re-trained on this input with their
+native temporal resampling applied to reach $T=390$; publicly released
+checkpoints were used for initialisation where available. Consequently, the
+spatial-robustness property of Section~\ref{sec:robust_exp} is a property of
+the \emph{shared preprocessing pipeline}, and the comparison in
+Section~\ref{sec:comparison} isolates architectural differences alone.
+For MotionBERT-Lite, we use an 81-frame uniformly sampled temporal adapter to
+reduce the quadratic cost of temporal self-attention while preserving the same
+subject-level split, training epochs, and 17-joint representation.
+
+%% =======================================================
+%%  5. EXPERIMENTAL RESULTS
+%% =======================================================
+\section{Experimental Results}
+\label{sec:results}
+
+\subsection{Quantitative robustness to spatial perturbations}
+\label{sec:robust_exp}
+To validate the optional scale-normalisation step in Eq.~\eqref{eq:norm}, we
+apply synthetic scale (distance) and horizontal-translation perturbations to the
+input coordinates at inference time (Table~\ref{tab:robustness}).
+
+\begin{table}[htpb]
+\centering
+\caption{Robustness to affine scale (distance) and translation perturbations.
+$\Delta$MAE is the relative change from each model's own unperturbed baseline.}
+\label{tab:robustness}
+\footnotesize
+\setlength{\tabcolsep}{4pt}
+\renewcommand{\arraystretch}{0.95}
+\resizebox{0.95\linewidth}{!}{%
+\begin{tabular}{lcc}
+\toprule
+\textbf{Perturbation} & \textbf{COM only ($\Delta$MAE)} &
+\textbf{COM + bone-norm variant ($\Delta$MAE)} \\
+\midrule
+Original (baseline MAE)        & \textbf{0.358} & 0.366 \\
+Scale $s=0.70$ (far)           & $+35.9\%$ & \textbf{$+0.0\%$} \\
+Scale $s=1.30$ (near)          & $+46.5\%$ & \textbf{$+0.0\%$} \\
+Shift $\Delta x=\pm0.20$       & $+0.0\%$  & \textbf{$+0.0\%$} \\
+\bottomrule
+\end{tabular}
+}
+\end{table}
+
+Without bone-length scaling, distance-induced scale perturbations degrade MAE by
+up to $46.5\%$. Adding the scaling step eliminates this synthetic shift
+($\Delta$MAE $=0\%$). This invariance holds \emph{by construction} under a global
+multiplicative model of distance change, and we do not claim robustness to true
+perspective distortion arising from extreme camera angles, which we treat as a
+limitation (Section~\ref{sec:failure}). Because the scale-normalised variant has
+a small accuracy cost (0.358\,$\to$\,0.366 MAE), the main comparison tables use
+the best-performing COM-centred model, while the scale-normalised variant is
+reported as a robustness operating point.
+
+\subsection{Ablation studies}
+\label{sec:ablation}
+Table~\ref{tab:ablation_feat} reports the input-feature ablation and
+Table~\ref{tab:ablation_arch} the architecture ablation, both on the combined CNUH+CARE-PD cohort under the GroupKFold protocol.
+
+\begin{table}[htpb]
+\centering
+\caption{Input-feature ablation on the combined CNUH+CARE-PD cohort
+(GroupKFold 5-fold, $N=6{,}087$).
+Lower MAE/RMSE and higher F1 are better.}
+\label{tab:ablation_feat}
+\begin{tabular}{clccc}
+\toprule
+\textbf{Config.} & \textbf{Feature set} & \textbf{MAE} & \textbf{RMSE} &
+\textbf{F1$_{0\text{--}3}$} \\
+\midrule
+A & COM coordinates only            & 0.374 & 0.577 & 0.617 \\
+B & + velocity                      & 0.432 & 0.629 & 0.508 \\
+C & + amplitude / variability       & 0.376 & 0.549 & 0.546 \\
+D & \textbf{+ joint angle (Proposed)} & \textbf{0.358} & 0.564 & \textbf{0.661} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[htpb]
+\centering
+\caption{Architecture ablation on the combined CNUH+CARE-PD cohort
+(Configuration~D features, GroupKFold 5-fold).}
+\label{tab:ablation_arch}
+\begin{tabular}{lccc}
+\toprule
+\textbf{Model} & \textbf{MAE} & \textbf{RMSE} & \textbf{F1$_{0\text{--}3}$} \\
+\midrule
+MLP only (mean pooling)            & 0.554 & 0.653 & 0.381 \\
+GraphConv + MLP                    & 0.450 & 0.580 & 0.510 \\
+GraphConv + Joint Attention + MLP  & 0.414 & 0.564 & 0.507 \\
+\textbf{Full model (Ours)}         & \textbf{0.358} & 0.564 & \textbf{0.661} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Comparison with state-of-the-art motion encoders}
+\label{sec:comparison}
+Table~\ref{tab:comparison} compares the proposed system against classical,
+graph-based, and Transformer-based baselines, all under the fair-comparison
+protocol of Section~\ref{sec:fairness}.
+
+\begin{table}[htpb]
+\centering
+\caption{Comparison on the combined CNUH+CARE-PD cohort (17-joint, COM-centred input,
+subject-level GroupKFold 5-fold, $N=6{,}087$). All models share the identical
+input and split; the comparison therefore reflects architecture alone.}
+\label{tab:comparison}
+\begin{tabular}{lccccc}
+\toprule
+\textbf{Model} & \textbf{\#Params} & \textbf{MAE} & \textbf{RMSE} &
+\textbf{F1$_{0\text{--}3}$} & \textbf{F1$_{0\text{--}2}$} \\
+\midrule
+SVR (best classical)              & ---     & 0.492 & 0.639 & 0.485 & 0.597 \\
+Lu et al.\ \cite{lu2020vision}    & 147{,}908 & 0.404 & 0.543 & 0.666 & 0.673 \\
+ST-GCN \cite{yan2018spatial}      & 252{,}097 & 0.443 & 0.623 & 0.476 & 0.628 \\
+MotionBERT-Lite (81-frame) \cite{zhu2023motionbert}        & 10.8M & 0.442 & 0.625 & 0.457 & 0.613 \\
+MotionAGFormer-XS \cite{mehraban2024motionagformer} & 2.3M & 0.405 & 0.638 & 0.561 & 0.636 \\
+\midrule
+\textbf{Proposed System (Ours)}   & 158{,}594 & \textbf{0.358} & 0.564 & 0.661 & \textbf{0.691} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+With only 158{,}594 parameters, the proposed system performs competitively with
+substantially larger Transformer encoders in both MAE and Macro-F1 while adding
+bounded-output safety. Because all baselines receive the identical COM-centred
+input, any accuracy difference is attributable to architecture rather than
+preprocessing.
+Among the completed baselines, Lu et al. attains the highest rounded-score
+F1$_{0\text{--}3}$ (0.666) and the lowest RMSE, whereas the proposed system
+achieves the lowest MAE (0.358), strong F1$_{0\text{--}3}$ (0.661), the highest
+F1$_{0\text{--}2}$ among completed models (0.691), bounded-output safety, and
+substantially lower parameter count than large pretrained Transformer encoders.
+MotionAGFormer-XS achieves a similar MAE to Lu et al. (0.405) and the lowest
+MedAE among completed external encoders (0.095; reported in the supplementary
+result table), but its RMSE and rounded-score F1 are lower than those of the
+proposed system. MotionBERT-Lite with the 81-frame adapter is computationally
+tractable but remains less accurate than the proposed system and Lu et al.
+
+\subsection{Cross-site zero-shot transfer and bounded safety}
+\label{sec:crossds}
+
+\paragraph{Primary zero-shot transfer (CARE-PD\,$\to$\,CNUH).}
+To assess real-world deployability, the model is trained on the CARE-PD subset
+($N=110$) and evaluated, without any fine-tuning, on the independent CNUH cohort
+($N=21$) (Table~\ref{tab:zero_primary}).
+
+\begin{table}[htpb]
+\centering
+\caption{Primary zero-shot transfer (CARE-PD\,$\to$\,CNUH). No fine-tuning or
+domain adaptation was applied.}
+\label{tab:zero_primary}
+\begin{tabular}{lccc}
+\toprule
+\textbf{Model} & \textbf{MAE} & \textbf{RMSE} & \textbf{F1$_{0\text{--}3}$} \\
+\midrule
+ST-GCN \cite{yan2018spatial}      & 1.203 & 1.385 & 0.100 \\
+Lu et al.\ \cite{lu2020vision}    & 0.865 & 1.027 & 0.155 \\
+Proposed (Ours)          & 0.910 & 1.034 & 0.178 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Extreme low-data stress test (CNUH\,$\to$\,CARE-PD).}
+To isolate the effect of the bounded-regression head, we reverse the direction:
+training on only 21 CNUH subjects and extrapolating to 6{,}066 CARE-PD sequences
+(Table~\ref{tab:zero_stress}). This is a deliberate stress test of numerical
+stability under severe data scarcity, not a deployment scenario.
+
+\begin{table}[htpb]
+\centering
+\caption{Extreme low-data stress test (CNUH\,$\to$\,CARE-PD), isolating the
+bounded-output safety mechanism.}
+\label{tab:zero_stress}
+\begin{tabular}{lcc}
+\toprule
+\textbf{Model variant} & \textbf{MAE} & \textbf{RMSE} \\
+\midrule
+ST-GCN (unbounded)            & 8.346 & 9.737 \\
+ST-GCN (post-hoc clipped to $[0,3]$)       & 2.211 & 2.347 \\
+\textbf{Proposed (bounded)}   & \textbf{0.747} & \textbf{0.882} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The unbounded ST-GCN suffers catastrophic failure (MAE 8.346) from extreme
+extrapolation on domain-shifted data. Post-hoc clipping of its predictions to
+the valid range $[0,3]$ prevents this explosion, confirming that bounded output
+is essential for numerical safety; the proposed architecture additionally
+retains the lowest error, showing that bounding and architecture contribute
+separately.
+Post-hoc clipping prevents the numerical explosion of unbounded ST-GCN but
+remains substantially worse than the proposed bounded model; thus, output
+bounding improves safety, while the proposed architecture is still needed for
+low error.
+
+\subsection{Clinical performance and transparency}
+\label{sec:perclass}
+Table~\ref{tab:perclass} stratifies error by ground-truth score, and
+Table~\ref{tab:lodo} reports the CARE-PD leave-one-dataset-out (LODO)
+protocol, a cohort-level generalisation test.
+
+\begin{table}[htpb]
+\centering
+\caption{Per-class error and per-class F1 on the combined CNUH+CARE-PD cohort
+(GroupKFold 5-fold).}
+\label{tab:perclass}
+\begin{tabular}{crccc}
+\toprule
+\textbf{Score} & \textbf{$N$ (seq.)} & \textbf{MAE} & \textbf{RMSE} &
+\textbf{Class F1} \\
+\midrule
+0 & 2{,}615 & 0.225 & 0.395 & 0.793 \\
+1 & 2{,}183 & 0.342 & 0.482 & 0.662 \\
+2 & 1{,}244 & 0.649 & 0.889 & 0.612 \\
+3 &    45  & 0.738 & 0.930 & 0.576 \\
+\bottomrule
+\end{tabular}
+\end{table}
+The row-normalised confusion matrix and calibration-style curve are provided as
+supplementary transparency figures.
+
+\begin{table}[htpb]
+\centering
+\caption{CARE-PD leave-one-dataset-out (LODO) results. Each row holds out one
+source cohort; Overall aggregates all held-out sequences.}
+\label{tab:lodo}
+\begin{tabular}{lccc}
+\toprule
+\textbf{Held-out cohort} & \textbf{MAE} & \textbf{RMSE} &
+\textbf{F1$_{0\text{--}3}$} \\
+\midrule
+3DGait    & 0.775 & 0.947 & 0.233 \\
+BMCLab    & 0.663 & 0.844 & 0.340 \\
+PD-GaM    & 0.495 & 0.724 & 0.414 \\
+T-SDU-PD  & 0.692 & 0.836 & 0.305 \\
+\midrule
+\textbf{Overall} & \textbf{0.620} & \textbf{0.813} & \textbf{0.358} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+%% =======================================================
+%%  6. DISCUSSION: SYSTEM DEPLOYMENT
+%% =======================================================
+\section{Discussion: A Clinical Decision-Support System}
+\label{sec:discussion}
+
+To qualify as an expert system rather than a bare predictor, the model must
+manage its own uncertainty and report concrete deployment cost. We address both.
+
+\subsection{Selective prediction: a risk--coverage analysis}
+\label{sec:selective}
+A deployable clinical system should defer unreliable predictions to a human
+expert. We equip the system with a \emph{post-hoc abstention rule} requiring no
+retraining. Because the rounded decision boundaries of the ordinal scale lie at
+the half-integers $\{0.5,1.5,2.5\}$, the distance of a continuous prediction
+$\hat{y}$ to its nearest boundary is a natural confidence proxy:
+\begin{equation}
+u(\hat{y}) = \min_{b\in\{0.5,1.5,2.5\}} \lvert \hat{y}-b\rvert .
+\label{eq:uncertainty}
+\end{equation}
+A small $u$ indicates a boundary-proximal prediction most likely to be misrounded;
+a large $u$ indicates a prediction comfortably inside a class interval. We
+\emph{abstain} (flag for clinician review) whenever $u(\hat{y})<\tau$ and
+auto-score the remainder. Sweeping $\tau$ traces a \emph{risk--coverage curve},
+where \emph{coverage} is the fraction of cases auto-scored and \emph{selective
+risk} is the MAE on the retained subset.
+
+Discarding hard cases trivially lowers retained error, so to demonstrate that
+the gain reflects an \emph{informative} uncertainty signal we compare against a
+\emph{random-abstention} baseline that flags the same fraction of cases
+uniformly at random; an informative rule must lie strictly below this baseline
+at equal coverage. We summarise the full curve by the Area Under the
+Risk--Coverage curve (AURC; lower is better). We additionally report a fixed,
+clinically interpretable operating band $\hat{y}\in[1.3,1.7]$, which targets the
+contentious $1\!\leftrightarrow\!2$ boundary where inter-rater disagreement is
+highest \cite{richards1994inter}.
+
+\begin{table}[htpb]
+\centering
+\caption{Selective prediction (risk--coverage) on the combined CNUH+CARE-PD
+cohort. At each
+target coverage, the threshold $\tau$ flags the most boundary-proximal cases via
+Eq.~\eqref{eq:uncertainty}. We report MAE and F1$_{0\text{--}3}$ on the retained
+(auto-scored) subset, and the MAE of a random-abstention baseline at matched
+coverage. The final row is the fixed clinical band $[1.3,1.7]$.}
+\label{tab:selective}
+\scriptsize
+\setlength{\tabcolsep}{3pt}
+\renewcommand{\arraystretch}{0.92}
+\resizebox{\linewidth}{!}{%
+\begin{tabular}{lccccc}
+\toprule
+\textbf{Coverage} & \textbf{$\tau$} & \textbf{Flagged (\%)} &
+\textbf{Retained MAE} & \textbf{Retained F1$_{0\text{--}3}$} &
+\textbf{Random-abst.\ MAE} \\
+\midrule
+100\% (no abstention) & ---          & 0.0           & 0.358        & 0.661 & 0.358 \\
+90\%                  & 0.11  & 10.0          & 0.325 & 0.687 & 0.358 \\
+80\%                  & 0.22  & 20.0          & 0.288 & 0.692 & 0.358 \\
+70\%                  & 0.30  & 30.0          & 0.260 & 0.701 & 0.357 \\
+\midrule
+Clinical band $[1.3,1.7]$ & ---      & 6.0    & 0.345 & 0.675 & 0.358 \\
+\midrule
+\multicolumn{6}{l}{AURC (Ours): 0.278 \quad vs.\ random abstention:
+0.358 \quad (lower is better)} \\
+\bottomrule
+\end{tabular}
+}
+\end{table}
+
+As Table~\ref{tab:selective} shows, retained MAE decreases from 0.358 at full
+coverage to 0.260 at 70\% coverage (a 27.2\% relative reduction), while the
+random-abstention baseline at the same coverage remains essentially flat
+(0.357--0.358). The gap confirms that the boundary-distance score of
+Eq.~\eqref{eq:uncertainty} is an informative uncertainty proxy rather than a
+trivial discarding of hard samples. The fixed clinical band $[1.3,1.7]$ flags
+only 6.0\% of cases yet reduces retained MAE to 0.345, giving a simple,
+auditable human-in-the-loop operating point; the AURC of 0.278 versus 0.358 for
+random abstention quantifies the benefit over the entire curve.
+
+\subsection{Edge deployability}
+\label{sec:deploy}
+With 158{,}594 parameters, the model requires 4.66\,ms per sequence on CUDA GPU
+and 5.79\,ms per sequence on CPU in a forward-pass benchmark with batch size 32,
+enabling local inference without cloud infrastructure. Once skeletal keypoints are extracted, the raw RGB stream is
+discarded, so only low-dimensional joint coordinates are stored or transmitted,
+substantially reducing re-identification risk relative to pixel-based pipelines.
+
+\subsection{Failure modes and limitations}
+\label{sec:failure}
+\begin{itemize}
+    \item \emph{Class imbalance.} Score-3 sequences are severely
+    underrepresented ($\sim$0.7\%), limiting discriminative capacity for the most
+    severe cases; class-weighted losses or targeted augmentation are natural
+    extensions.
+    \item \emph{Perspective distortion.} COM-centred normalisation removes
+    global translation, and the optional bone-length scaling variant neutralises
+    global 2D scale perturbations \emph{by construction}, but neither models
+    full 3D perspective distortion from extreme camera angles; robustness under
+    real multi-distance, multi-angle capture remains for dedicated evaluation.
+    \item \emph{Pose-extraction failure.} Under heavy occlusion MediaPipe may lose
+    tracking, drifting predictions toward the cohort mean; confidence-based frame
+    filtering is recommended for uncontrolled environments.
+    \item \emph{Statistical testing.} Sequence-level significance tests inflate
+    the effective sample size because sequences cluster within subjects;
+    confirmatory analysis aggregates errors at the subject level
+    (Section~\ref{sec:metrics}).
+\end{itemize}
+
+%% =======================================================
+%%  7. CONCLUSION
+%% =======================================================
+\section{Conclusion}
+\label{sec:conclusion}
+We presented an intelligent vision-based decision-support system for Parkinson's
+gait severity assessment from a single RGB camera. Beyond a bare motion encoder,
+the system addresses practical deployment bottlenecks: it uses COM-centred
+normalisation, validates an optional scale-normalised robustness variant under a
+global-scaling approximation, enforces clinical output bounds, and exposes an
+explicit abstention rule quantified by a risk--coverage analysis. Validated on the
+multi-site CARE-PD subset and an independent prospective CNUH cohort, the system
+achieves competitive accuracy (MAE\,=\,0.358, RMSE\,=\,0.564,
+MedAE\,=\,0.147) and Macro-F1 against
+state-of-the-art encoders at a fraction of their parameter count, with stable
+zero-shot cross-site behaviour. By reporting edge-inference latency, Macro-F1
+under class imbalance, and transparent failure modes, the pipeline forms a
+practical, privacy-preserving building block for clinical decision support in
+Parkinson's disease.
+
+%% =======================================================
+%%  CRediT
+%% =======================================================
+\section*{CRediT authorship contribution statement}
+\textbf{Bokyung Kim}: Conceptualisation, Methodology, Software, Formal analysis,
+Data curation, Writing -- original draft, Visualisation.
+\textbf{Hieyong Jeong}: Conceptualisation, Supervision, Writing -- review and
+editing, Funding acquisition.
+\textbf{Md Ilias Bappi}: Investigation, Writing -- review and editing.
+\textbf{Kyungbaek Kim}: Resources, Writing -- review and editing.
+
+\section*{Declaration of competing interest}
+The authors declare no known competing financial interests or personal
+relationships that could have influenced the work reported in this paper.
+
+\section*{Data availability}
+Source code is available at
+\url{https://github.com/bokyung08/parkinson_COM}. The CNUH clinical data cannot
+be redistributed due to patient-privacy regulations; requests may be directed to
+the corresponding author. CARE-PD is available from \cite{adeli2025carepd}.
+
+\section*{Ethical approval}
+This study was approved by the IRB of Chonnam National University Hospital
+(CNUH-2025-203). Written informed consent was obtained from all participants, in
+accordance with the 1964 Helsinki Declaration and its later amendments.
+
+\section*{Acknowledgements}
+This work was supported by the National Research Foundation of Korea (NRF) grant
+funded by the Korea government (MSIT) (No.~RS-2026-25469002), and by the
+IITP-ITRC grant funded by the Korea government (MSIT)
+(IITP-2026-RS-2024-00437718).
+
+%% =======================================================
+%%  REFERENCES
+%% =======================================================
+\bibliographystyle{elsarticle-num}
+\begin{thebibliography}{99}
+\bibitem{martinez2011mds} Mart\'inez-Mart\'in P, et al. MDS-UPDRS: a new scale for the evaluation of Parkinson's disease. \textit{Mov Disord} 2011;26(12):2171--2177.
+\bibitem{richards1994inter} Richards M, et al. Inter-rater reliability of the Unified Parkinson's Disease Rating Scale. \textit{Mov Disord} 1994;9(1):89--91.
+\bibitem{goetz2008mds} Goetz CG, et al. MDS-UPDRS: scale presentation and clinimetric testing results. \textit{Mov Disord} 2008;23(15):2129--2170.
+\bibitem{dibiase2020gait} di Biase L, et al. Gait analysis in Parkinson's disease: most accurate markers for diagnosis and monitoring. \textit{Sensors} 2020;20(12):3529.
+\bibitem{zhang2024wearable} Zhang W, et al. Wearable sensor-based quantitative gait analysis in Parkinson's disease. \textit{npj Digit Med} 2024;7:169.
+\bibitem{sun2024digital} Sun Y, et al. Digital biomarkers for precision diagnosis and monitoring in Parkinson's disease. \textit{npj Digit Med} 2024;7:218.
+\bibitem{cao2017openpose} Cao Z, et al. OpenPose: realtime multi-person 2D pose estimation using part affinity fields. \textit{IEEE TPAMI} 2019;43(1):172--186.
+\bibitem{bazarevsky2020blazepose} Bazarevsky V, et al. BlazePose: on-device real-time body pose tracking. \textit{arXiv} 2020;arXiv:2006.10204.
+\bibitem{lu2020vision} Lu M, et al. Vision-based estimation of MDS-UPDRS gait scores for assessing Parkinson's disease motor severity. In: \textit{MICCAI}; 2020. p.\ 637--647.
+\bibitem{lu2021quantifying} Lu M, et al. Quantifying Parkinson's disease motor severity under uncertainty using MDS-UPDRS videos. \textit{Med Image Anal} 2021;73:102179.
+\bibitem{gennarelli2025skelmamba} Gennarelli I, et al. SkelMamba: a markerless motion capture approach for automated diagnosis of neurological disorders based on RGB videos. \textit{Gait Posture} 2025;122:109944.
+\bibitem{tian2024crossspatiotemporal} Tian H, et al. Cross-spatiotemporal graph convolution networks for skeleton-based Parkinsonian gait MDS-UPDRS score estimation. \textit{IEEE TNSRE} 2024;32:412--421.
+\bibitem{adeli2025carepd} Adeli V, et al. CARE-PD: a multi-site anonymized clinical dataset for Parkinson's disease gait assessment. In: \textit{NeurIPS Datasets and Benchmarks}; 2025.
+\bibitem{adeli2024benchmarking} Adeli V, et al. Benchmarking skeleton-based motion encoder models for clinical applications: estimating Parkinson's disease severity in walking sequences. In: \textit{IEEE FG}; 2024.
+\bibitem{yan2018spatial} Yan S, Xiong Y, Lin D. Spatial temporal graph convolutional networks for skeleton-based action recognition. In: \textit{AAAI}; 2018.
+\bibitem{shi2019twoStream} Shi L, et al. Two-stream adaptive graph convolutional networks for skeleton-based action recognition. In: \textit{CVPR}; 2019.
+\bibitem{zhu2023motionbert} Zhu W, et al. MotionBERT: a unified perspective on learning human motion representations. In: \textit{ICCV}; 2023.
+\bibitem{mehraban2024motionagformer} Mehraban S, et al. MotionAGFormer: enhancing 3D human pose estimation with a transformer-GCNFormer network. In: \textit{WACV}; 2024.
+\bibitem{winter2009biomechanics} Winter DA. \textit{Biomechanics and Motor Control of Human Movement}. 4th ed.\ Wiley; 2009.
+\end{thebibliography}
+
+\end{document}

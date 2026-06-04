@@ -1,6 +1,6 @@
 # 최종 통합 결과 국문 요약
 
-- 최종 업데이트: 2026-06-01
+- 최종 업데이트: 2026-06-05
 - 데이터셋: CNUH + CARE-PD
 - 입력 형식: H36M-compatible 17-joint gait sequence
 - 분할 방식: subject-level GroupKFold, 5 folds
@@ -45,31 +45,38 @@ LOSO 실험으로 해석해야 한다.
 | Classical ML | Shallow MLP | 5 | 6,087 | 0 | 0.010 | 0.544 | 0.708 | 0.423 |
 | Deep Learning | Temporal CNN | 5 | 6,087 | 188,929 | 0.294 | 0.425 | 0.594 | 0.287 |
 | SOTA | ST-GCN | 5 | 6,087 | 252,097 | 22.523 | 0.443 | 0.623 | 0.274 |
+| SOTA | MotionBERT-Lite (81-frame) | 5 | 6,087 | 10,814,222 | 5.243 | 0.442 | 0.625 | 0.247 |
 | SOTA | Lu et al. official-architecture DD-Net/OF-DDNet | 5 | 6,087 | 147,908 | 0.445 | 0.404 | **0.543** | 0.307 |
-| Proposed | Ours V1, bounded regression | 5 | 6,087 | 158,594 | 4.615 | **0.358** | 0.564 | **0.147** |
+| SOTA | MotionAGFormer-XS | 5 | 6,087 | 2,307,324 | 6.150 | 0.405 | 0.638 | **0.095** |
+| Proposed | Ours V1, bounded regression | 5 | 6,087 | 158,594 | 4.615 | **0.358** | 0.564 | 0.147 |
 
 ## 4. 메인 결과 해석
 
-Ours V1은 전체 비교에서 가장 낮은 MAE와 MedAE를 보였다. 즉 평균적인
-절대 오차와 typical-case 오차 측면에서는 가장 우수하다.
+Ours V1은 전체 비교에서 가장 낮은 MAE를 보였다. 즉 평균적인 임상 점수
+절대 오차 측면에서는 가장 우수하다. 단, RMSE는 Lu official baseline이 가장
+낮고, MedAE는 MotionAGFormer-XS가 가장 낮다.
 
 | 비교 | MAE 감소율 |
 |---|---:|
 | Ours V1 vs SVR, best classical ML | 27.4% |
 | Ours V1 vs Temporal CNN | 15.8% |
 | Ours V1 vs ST-GCN | 19.3% |
+| Ours V1 vs MotionBERT-Lite (81-frame) | 19.0% |
 | Ours V1 vs Lu official-architecture baseline | 11.5% |
+| Ours V1 vs MotionAGFormer-XS | 11.7% |
 
-단, RMSE는 Lu official baseline이 가장 낮다. 따라서 논문에서는 다음과 같이
-표현하는 것이 안전하다.
+따라서 논문에서는 다음과 같이 표현하는 것이 안전하다.
 
-> Ours V1 improves average absolute clinical-score error and typical-case
-> absolute error, while Lu official has slightly lower aggregate squared error.
+> Ours V1 improves average absolute clinical-score error, while Lu official has
+> slightly lower aggregate squared error and MotionAGFormer-XS has the lowest
+> median absolute error.
 
 국문 해석:
 
-> 제안 모델은 평균 절대 오차와 중앙값 절대 오차에서 가장 우수하지만, 큰 오차에
-> 더 민감한 RMSE 기준에서는 Lu et al. baseline이 약간 더 낮았다.
+> 제안 모델은 평균 절대 오차에서 가장 우수하지만, 큰 오차에 더 민감한 RMSE
+> 기준에서는 Lu et al. baseline이 약간 더 낮았고, 중앙값 절대 오차 기준에서는
+> MotionAGFormer-XS가 가장 낮았다. MotionBERT-Lite (81-frame)는 MAE/RMSE
+> 기준으로 ST-GCN과 유사하지만 제안 모델보다 낮지는 않았다.
 
 ## 5. 통계 검증
 
@@ -407,7 +414,9 @@ Calibration reliability curve는 기존 GroupKFold prediction만으로 계산했
 |---|---:|---|
 | Ours V1 | **0.358** | proposed model calibration curve |
 | Lu official | 0.404 | SOTA comparison curve |
+| MotionAGFormer-XS | 0.405 | SOTA comparison curve; 포함하려면 figure 재생성 필요 |
 | Temporal CNN | 0.425 | deep baseline comparison curve |
+| MotionBERT-Lite (81-frame) | 0.442 | SOTA comparison curve; 포함하려면 figure 재생성 필요 |
 | ST-GCN | 0.443 | SOTA comparison curve |
 
 주의: 이 figure에는 별도의 calibration 수치를 표기하지 않는다. Ours V1은 가장 낮은

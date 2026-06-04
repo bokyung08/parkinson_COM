@@ -30,6 +30,11 @@ PROTOCOLS = {
 MODEL_LABELS = {
     "ours": ("Proposed", "Ours V1"),
     "stgcn": ("SOTA", "ST-GCN"),
+    "motionbert": ("SOTA", "MotionBERT-style"),
+    "motionagformer": ("SOTA", "MotionAGFormer-style"),
+    "motionbert_pretrained": ("SOTA", "MotionBERT pretrained"),
+    "motionbert_lite_pretrained": ("SOTA", "MotionBERT-Lite (81-frame)"),
+    "motionagformer_xs_pretrained": ("SOTA", "MotionAGFormer-XS pretrained"),
     "lu_ofddnet_official": ("SOTA", "Lu official"),
 }
 
@@ -37,6 +42,11 @@ COMBINED_SUMMARY_PATHS = {
     "ours": "results/groupkfold_h36m17_ours_lu_official_cuda/summary.csv",
     "lu_ofddnet_official": "results/groupkfold_h36m17_ours_lu_official_cuda/summary.csv",
     "stgcn": "results/groupkfold_h36m17_sota_cuda/summary.csv",
+    "motionbert": "results/groupkfold_h36m17_motion_encoders_cuda/summary.csv",
+    "motionagformer": "results/groupkfold_h36m17_motion_encoders_cuda/summary.csv",
+    "motionbert_pretrained": "results/groupkfold_h36m17_motionbert_pretrained_cuda/summary.csv",
+    "motionbert_lite_pretrained": "results/groupkfold_h36m17_motionbert_lite81_cuda/summary.csv",
+    "motionagformer_xs_pretrained": "results/groupkfold_h36m17_motionagformer_xs_pretrained_cuda/summary.csv",
 }
 
 
@@ -49,7 +59,20 @@ def set_seed(seed: int) -> None:
 
 
 def input_kind_for_model(model_name: str) -> str:
-    return "coords" if model_name in {"stgcn", *LU_CLASSIFIERS} else "hybrid"
+    return (
+        "coords"
+        if model_name
+        in {
+            "stgcn",
+            "motionbert",
+            "motionagformer",
+            "motionbert_pretrained",
+            "motionbert_lite_pretrained",
+            "motionagformer_xs_pretrained",
+            *LU_CLASSIFIERS,
+        }
+        else "hybrid"
+    )
 
 
 def dataset_indices(df: pd.DataFrame, dataset: str) -> np.ndarray:
@@ -270,7 +293,7 @@ def write_report(out_dir: Path, summary: pd.DataFrame, args) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Run zero-shot cross-dataset comparison for Ours/ST-GCN/Lu.")
+    parser = argparse.ArgumentParser(description="Run zero-shot cross-dataset comparison for Ours and skeleton encoder baselines.")
     parser.add_argument("--manifest", default="data/processed/manifest.csv")
     parser.add_argument("--out_dir", default="results/cross_dataset_model_comparison")
     parser.add_argument("--doc_path", default="docs/cross_dataset_model_comparison.md")

@@ -41,7 +41,9 @@ video_outputs_pose_only/
 *.npz
 *.h5
 *.weights.h5
+*.bin
 *.pth
+*.pth.tr
 *.pt
 *.ckpt
 
@@ -51,6 +53,8 @@ unused/
 # External upstream repositories and downloaded clinical datasets
 CARE-PD-master/
 care-pd-master/
+external/
+carepd_17pt_experiments/external/
 
 # OS/editor noise
 .DS_Store

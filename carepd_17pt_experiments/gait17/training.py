@@ -23,6 +23,26 @@ from .models import expected_score_from_logits, make_model, ordinal_focal_loss
 LU_CLASSIFIERS = {"lu_ofddnet_official"}
 
 
+def torch_predict(
+    model: torch.nn.Module,
+    x: np.ndarray,
+    y: np.ndarray,
+    model_name: str,
+    device: torch.device,
+    batch_size: int,
+) -> np.ndarray:
+    preds = []
+    model.eval()
+    x_tensor = torch.from_numpy(x).float()
+    with torch.no_grad():
+        for start in range(0, len(x_tensor), batch_size):
+            xb = x_tensor[start : start + batch_size].to(device)
+            out = model(xb)
+            pred = expected_score_from_logits(out) if model_name in LU_CLASSIFIERS else out
+            preds.append(pred.detach().cpu().numpy().astype(np.float32))
+    return np.concatenate(preds, axis=0) if preds else np.asarray([], dtype=np.float32)
+
+
 def regression_metrics(y_true: np.ndarray, y_pred: np.ndarray) -> dict[str, float]:
     residual = y_pred - y_true
     return {
@@ -93,7 +113,20 @@ def run_torch_fold(
     checkpoint_path: Path | None = None,
     checkpoint_meta: dict | None = None,
 ) -> tuple[dict, np.ndarray, np.ndarray, list[str]]:
-    input_kind = "coords" if model_name in {"stgcn", *LU_CLASSIFIERS} else "hybrid"
+    input_kind = (
+        "coords"
+        if model_name
+        in {
+            "stgcn",
+            "motionbert",
+            "motionagformer",
+            "motionbert_pretrained",
+            "motionbert_lite_pretrained",
+            "motionagformer_xs_pretrained",
+            *LU_CLASSIFIERS,
+        }
+        else "hybrid"
+    )
     use_scale_aug = args.scale_aug_min != 1.0 or args.scale_aug_max != 1.0
     if use_scale_aug:
         x_val, y_val, ids = materialize_arrays(
@@ -139,7 +172,6 @@ def run_torch_fold(
     model = make_model(model_name, in_channels).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate, betas=(0.9, 0.999))
     criterion = nn.MSELoss()
-    val_tensor = torch.from_numpy(x_val).float().to(device)
     loader = DataLoader(train_ds, batch_size=args.batch_size, shuffle=True)
     best_state = None
     best_val = float("inf")
@@ -160,10 +192,8 @@ def run_torch_fold(
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
             optimizer.step()
         model.eval()
-        with torch.no_grad():
-            out = model(val_tensor)
-            pred_val = expected_score_from_logits(out) if model_name in LU_CLASSIFIERS else out
-            val_mae = torch.mean(torch.abs(pred_val - torch.from_numpy(y_val).float().to(device))).item()
+        pred_val_np = torch_predict(model, x_val, y_val, model_name, device, args.batch_size)
+        val_mae = float(np.mean(np.abs(pred_val_np - y_val)))
         if val_mae < best_val:
             best_val = val_mae
             best_state = {k: v.detach().cpu().clone() for k, v in model.state_dict().items()}
@@ -190,10 +220,7 @@ def run_torch_fold(
         )
     model.eval()
     infer_start = time.perf_counter()
-    with torch.no_grad():
-        out = model(val_tensor)
-        pred = expected_score_from_logits(out) if model_name in LU_CLASSIFIERS else out
-        pred_np = pred.detach().cpu().numpy().astype(np.float32)
+    pred_np = torch_predict(model, x_val, y_val, model_name, device, args.batch_size)
     infer_ms = (time.perf_counter() - infer_start) * 1000.0 / max(len(x_val), 1)
     category = {
         "temporal_cnn": "Deep Learning",
@@ -202,6 +229,11 @@ def run_torch_fold(
         "ours_gcn_attn_mlp": "Architecture Ablation",
         "ours": "Proposed",
         "stgcn": "SOTA",
+        "motionbert": "SOTA",
+        "motionagformer": "SOTA",
+        "motionbert_pretrained": "SOTA",
+        "motionbert_lite_pretrained": "SOTA",
+        "motionagformer_xs_pretrained": "SOTA",
         "lu_ofddnet_official": "SOTA",
     }[model_name]
     row = {

@@ -25,9 +25,23 @@ TORCH_MODELS = {
     "ours_gcn_attn_mlp",
     "ours",
     "stgcn",
+    "motionbert",
+    "motionagformer",
+    "motionbert_pretrained",
+    "motionbert_lite_pretrained",
+    "motionagformer_xs_pretrained",
     "lu_ofddnet_official",
 }
-DEFAULT_MODELS = ["ridge", "svr", "rf", "mlp_shallow", "temporal_cnn", "ours", "stgcn", "lu_ofddnet_official"]
+DEFAULT_MODELS = [
+    "ridge",
+    "svr",
+    "rf",
+    "mlp_shallow",
+    "temporal_cnn",
+    "ours",
+    "stgcn",
+    "lu_ofddnet_official",
+]
 
 
 def write_predictions(path: Path, rows: list[dict]) -> None:

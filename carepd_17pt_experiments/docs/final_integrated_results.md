@@ -1,6 +1,6 @@
 # Final Integrated Results
 
-- Last updated: 2026-06-01
+- Last updated: 2026-06-05
 - Dataset: CNUH + CARE-PD, converted to H36M-compatible 17-joint gait sequences
 - Split: subject-level GroupKFold, 5 folds
 - Target: MDS-UPDRS item 10 gait score, range 0-3
@@ -44,8 +44,10 @@ Lower MAE, RMSE, and MedAE are better.
 | Classical ML | Shallow MLP | 5 | 6,087 | 0 | 0.010 | 0.544 | 0.708 | 0.423 |
 | Deep Learning | Temporal CNN | 5 | 6,087 | 188,929 | 0.294 | 0.425 | 0.594 | 0.287 |
 | SOTA | ST-GCN | 5 | 6,087 | 252,097 | 22.523 | 0.443 | 0.623 | 0.274 |
+| SOTA | MotionBERT-Lite (81-frame) | 5 | 6,087 | 10,814,222 | 5.243 | 0.442 | 0.625 | 0.247 |
 | SOTA | Lu et al. official-architecture DD-Net/OF-DDNet | 5 | 6,087 | 147,908 | 0.445 | 0.404 | **0.543** | 0.307 |
-| Proposed | Ours V1, bounded regression | 5 | 6,087 | 158,594 | 4.615 | **0.358** | 0.564 | **0.147** |
+| SOTA | MotionAGFormer-XS | 5 | 6,087 | 2,307,324 | 6.150 | 0.405 | 0.638 | **0.095** |
+| Proposed | Ours V1, bounded regression | 5 | 6,087 | 158,594 | 4.615 | **0.358** | 0.564 | 0.147 |
 
 ## Main Result Interpretation
 
@@ -57,12 +59,16 @@ reductions are:
 | Ours V1 vs SVR, best classical ML | 27.4% |
 | Ours V1 vs Temporal CNN | 15.8% |
 | Ours V1 vs ST-GCN | 19.3% |
+| Ours V1 vs MotionBERT-Lite (81-frame) | 19.0% |
 | Ours V1 vs Lu official-architecture baseline | 11.5% |
+| Ours V1 vs MotionAGFormer-XS | 11.7% |
 
-Lu official has the best RMSE, but Ours V1 has better MAE and MedAE. The safest
-claim is that Ours V1 improves average absolute clinical-score error and
-typical-case absolute error, while Lu official has slightly lower aggregate
-squared error.
+Lu official has the best RMSE, and MotionAGFormer-XS has the best MedAE. The
+safest claim is that Ours V1 improves average absolute clinical-score error
+(MAE), while Lu official has slightly lower aggregate squared error and
+MotionAGFormer-XS has the lowest median absolute error. MotionBERT-Lite
+(81-frame) performs similarly to ST-GCN in MAE/RMSE, but does not improve over
+the proposed model.
 
 ## Statistical Validation
 
@@ -531,6 +537,10 @@ All generated figures are collected in:
 ```text
 docs/final_integrated_figures/
 ```
+
+Note: figures generated before 2026-06-05 may not include the completed
+MotionBERT-Lite (81-frame) and MotionAGFormer-XS rows. Regenerate the figure
+set before using the MAE ranking or model-comparison plots in the manuscript.
 
 Recommended manuscript figures:
 

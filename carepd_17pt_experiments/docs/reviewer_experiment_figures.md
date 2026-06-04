@@ -1,6 +1,6 @@
 # Reviewer-Oriented Experiment Figures
 
-- Last updated: 2026-06-02
+- Last updated: 2026-06-05
 - Purpose: add reviewer-friendly diagnostics beyond the main MAE/RMSE table
 
 ## 1. Calibration Reliability Curve
@@ -30,7 +30,9 @@ Summary:
 |---|---:|---|
 | Ours V1 | **0.358** | Main proposed-model calibration curve |
 | Lu official | 0.404 | SOTA comparison curve |
+| MotionAGFormer-XS | 0.405 | SOTA comparison curve; regenerate figure if included |
 | Temporal CNN | 0.425 | Deep baseline comparison curve |
+| MotionBERT-Lite (81-frame) | 0.442 | SOTA comparison curve; regenerate figure if included |
 | ST-GCN | 0.443 | SOTA comparison curve |
 
 Use this figure without printing a numerical calibration metric. The safe and

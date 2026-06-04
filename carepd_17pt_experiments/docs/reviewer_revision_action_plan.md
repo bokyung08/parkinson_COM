@@ -2,7 +2,7 @@
 
 - Target journal: Artificial Intelligence in Medicine
 - Review outcome: minor revision
-- Last updated: 2026-06-02
+- Last updated: 2026-06-05
 
 ## Executive Assessment
 
@@ -10,10 +10,11 @@ The review is favorable. The requested changes are mainly about methodological
 transparency and component-level evidence, not about invalidating the main
 result. The main manuscript claim should remain:
 
-> Ours V1 achieves the best MAE and MedAE under identical subject-level
-> GroupKFold evaluation, while Lu official has slightly lower RMSE. External
-> transfer reveals a domain gap, but LODO, calibration, robustness, and learning
-> curve analyses make the clinical decision-support story defensible.
+> Ours V1 achieves the best MAE under identical subject-level GroupKFold
+> evaluation, while Lu official has slightly lower RMSE and MotionAGFormer-XS
+> has the lowest MedAE. External transfer reveals a domain gap, but LODO,
+> calibration, robustness, and learning curve analyses make the clinical
+> decision-support story defensible.
 
 ## Required Actions
 
