@@ -70,6 +70,13 @@ class STGCNRegressor(nn.Module):
         return self.head(x).squeeze(-1)
 
 
+class BoundedSTGCNRegressor(STGCNRegressor):
+    """ST-GCN with the same sigmoid-scaled clinical output bound as Ours."""
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return 3.0 * torch.sigmoid(super().forward(x))
+
+
 class TemporalCNNRegressor(nn.Module):
     def __init__(self, in_channels: int, num_joints: int = 17, hidden: int = 128):
         super().__init__()
@@ -594,6 +601,8 @@ def make_model(name: str, in_channels: int):
         return OursGait17(in_channels=in_channels)
     if name == "stgcn":
         return STGCNRegressor(in_channels=in_channels)
+    if name == "stgcn_bounded":
+        return BoundedSTGCNRegressor(in_channels=in_channels)
     if name == "motionbert":
         return MotionBERTRegressor(in_channels=in_channels)
     if name == "motionagformer":

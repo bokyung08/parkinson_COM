@@ -30,6 +30,7 @@ PROTOCOLS = {
 MODEL_LABELS = {
     "ours": ("Proposed", "Ours V1"),
     "stgcn": ("SOTA", "ST-GCN"),
+    "stgcn_bounded": ("SOTA", "ST-GCN + bounded head"),
     "motionbert": ("SOTA", "MotionBERT-style"),
     "motionagformer": ("SOTA", "MotionAGFormer-style"),
     "motionbert_pretrained": ("SOTA", "MotionBERT pretrained"),
@@ -64,6 +65,7 @@ def input_kind_for_model(model_name: str) -> str:
         if model_name
         in {
             "stgcn",
+            "stgcn_bounded",
             "motionbert",
             "motionagformer",
             "motionbert_pretrained",
@@ -198,7 +200,9 @@ def train_fixed_epoch(
 def load_combined_rows(models: list[str]) -> pd.DataFrame:
     rows = []
     for model_name in models:
-        path = Path(COMBINED_SUMMARY_PATHS.get(model_name, ""))
+        if model_name not in COMBINED_SUMMARY_PATHS:
+            continue
+        path = Path(COMBINED_SUMMARY_PATHS[model_name])
         if not path.exists():
             continue
         df = pd.read_csv(path)

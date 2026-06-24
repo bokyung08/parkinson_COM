@@ -351,33 +351,48 @@ Manuscript-safe follow-up interpretation:
 
 The SOTA transfer comparison has now been completed with the same zero-shot
 protocols. No fine-tuning, adaptation, or test-set checkpoint selection was
-used.
+used. The table below combines the original Ours/ST-GCN/Lu transfer comparison
+with the completed MotionBERT-Lite and MotionAGFormer-XS transfer runs.
 
 | Category | Model | Train | Test | N train | N test | MAE | RMSE | MedAE |
 |---|---|---|---|---:|---:|---:|---:|---:|
-| Proposed | Ours V1 | CNUH | CARE-PD | 21 | 6,066 | **0.747** | **0.882** | 0.921 |
-| SOTA | Lu official | CNUH | CARE-PD | 21 | 6,066 | 0.898 | 1.016 | **0.596** |
+| SOTA | MotionAGFormer-XS | CNUH | CARE-PD | 21 | 6,066 | **0.740** | **0.875** | **0.567** |
+| Proposed | Ours V1 | CNUH | CARE-PD | 21 | 6,066 | 0.747 | 0.882 | 0.921 |
+| SOTA | MotionBERT-Lite (81-frame) | CNUH | CARE-PD | 21 | 6,066 | 0.889 | 1.078 | 0.841 |
+| SOTA | Lu official | CNUH | CARE-PD | 21 | 6,066 | 0.898 | 1.016 | 0.596 |
 | SOTA | ST-GCN | CNUH | CARE-PD | 21 | 6,066 | 8.346 | 9.737 | 6.734 |
-| Proposed | Ours V1 | CARE-PD | CNUH | 6,066 | 21 | 0.910 | 1.034 | **0.639** |
 | SOTA | Lu official | CARE-PD | CNUH | 6,066 | 21 | **0.865** | **1.027** | 0.735 |
+| SOTA | MotionBERT-Lite (81-frame) | CARE-PD | CNUH | 6,066 | 21 | 0.898 | 1.082 | 0.792 |
+| Proposed | Ours V1 | CARE-PD | CNUH | 6,066 | 21 | 0.910 | 1.034 | **0.639** |
+| SOTA | MotionAGFormer-XS | CARE-PD | CNUH | 6,066 | 21 | 0.921 | 1.152 | 0.729 |
 | SOTA | ST-GCN | CARE-PD | CNUH | 6,066 | 21 | 1.203 | 1.385 | 1.119 |
 
-Interpretation: the proposed model is strongest in the small-source
-CNUH -> CARE-PD direction and has the lowest average transfer MAE across both
-directions (`0.829`) compared with Lu official (`0.882`) and ST-GCN (`4.774`).
-Lu official is slightly better in CARE-PD -> CNUH. ST-GCN is highly unstable in
-the CNUH -> CARE-PD setting, likely because its unbounded regression head
-extrapolates poorly when trained on only 21 CNUH samples.
+Average across both transfer directions:
+
+| Model | Average MAE | Average RMSE | Average MedAE |
+|---|---:|---:|---:|
+| Ours V1 | **0.828** | **0.958** | 0.780 |
+| MotionAGFormer-XS | 0.831 | 1.014 | **0.648** |
+| Lu official | 0.882 | 1.021 | 0.666 |
+| MotionBERT-Lite (81-frame) | 0.894 | 1.080 | 0.816 |
+| ST-GCN | 4.774 | 5.561 | 3.926 |
+
+Interpretation: all models degrade under strict zero-shot transfer.
+MotionAGFormer-XS is marginally best in the CNUH -> CARE-PD direction, Lu
+official is slightly best in the CARE-PD -> CNUH direction, and Ours V1 has
+the lowest average transfer MAE across both directions. ST-GCN is highly
+unstable in the CNUH -> CARE-PD setting, likely because its unbounded
+regression head extrapolates poorly when trained on only 21 CNUH samples.
 
 Manuscript-safe wording:
 
 > Under strict zero-shot transfer, all skeleton-based models showed substantial
 > domain degradation. The proposed bounded graph-temporal model achieved the
-> best average transfer MAE and was most stable in the small-source
-> CNUH-to-CARE-PD setting, whereas Lu official was slightly better in the
-> CARE-PD-to-CNUH direction. These results reinforce the need for site
-> calibration or domain adaptation, while showing that the proposed model is a
-> comparatively stable transfer baseline.
+> lowest average transfer MAE across both directions, although MotionAGFormer-XS
+> was marginally better in the CNUH-to-CARE-PD direction and Lu official was
+> slightly better in the CARE-PD-to-CNUH direction. These results reinforce the
+> need for site calibration or domain adaptation, while showing that the
+> proposed model is a comparatively stable transfer baseline.
 
 #### 5. CARE-PD Leave-One-Dataset-Out
 
@@ -412,13 +427,72 @@ Completed follow-up outputs:
 
 ```text
 docs/cross_dataset_model_comparison.md
+docs/cross_dataset_model_comparison_v2.md
 docs/cross_dataset_validation_record_en.md
 docs/cross_dataset_validation_record_ko.md
 docs/dataset_wise_breakdown_analysis.md
 docs/score_balanced_transfer_analysis.md
 docs/fewshot_calibration_analysis.md
 docs/carepd_lodo_analysis.md
+docs/selective_prediction_analysis.md
+docs/latency_benchmark.md
+docs/additional_experiments_summary.md
 ```
+
+### Selective Prediction
+
+Selective prediction was computed from existing GroupKFold prediction tables.
+No retraining was performed. Predictions far from rounded-score decision
+boundaries are retained for automatic scoring, while boundary-proximal cases
+are flagged for clinician review.
+
+| Coverage | N kept | MAE | RMSE | MedAE | Rounded accuracy | MAE reduction |
+|---:|---:|---:|---:|---:|---:|---:|
+| 100% | 6,087 | 0.358 | 0.564 | 0.147 | 0.711 | 0.0% |
+| 90% | 5,478 | 0.325 | 0.540 | 0.116 | 0.744 | 9.2% |
+| 80% | 4,870 | 0.288 | 0.510 | 0.088 | 0.774 | 19.4% |
+| 70% | 4,261 | 0.260 | 0.493 | 0.064 | 0.793 | 27.2% |
+| 60% | 3,652 | 0.234 | 0.477 | 0.045 | 0.811 | 34.5% |
+| 50% | 3,044 | 0.211 | 0.462 | 0.030 | 0.825 | 40.9% |
+
+At 80% coverage, Ours V1 retains the lowest MAE and highest rounded-score
+accuracy among the compared models:
+
+| Category | Model | Retained MAE | Retained RMSE | Retained MedAE | Rounded accuracy |
+|---|---|---:|---:|---:|---:|
+| Proposed | Ours V1 | **0.288** | **0.510** | 0.088 | **0.774** |
+| SOTA | MotionAGFormer-XS | 0.351 | 0.612 | **0.054** | 0.700 |
+| SOTA | Lu official | 0.369 | 0.527 | 0.207 | 0.720 |
+| SOTA | MotionBERT-Lite (81-frame) | 0.384 | 0.578 | 0.149 | 0.674 |
+| SOTA | ST-GCN | 0.385 | 0.575 | 0.176 | 0.704 |
+
+Manuscript-safe wording:
+
+> Selective prediction analysis showed that boundary-distant predictions had
+> lower error. At 80% automatic coverage, the proposed model reduced MAE from
+> 0.358 to 0.288 and improved rounded-score accuracy from 0.711 to 0.774,
+> supporting a clinical workflow in which uncertain cases are flagged for
+> clinician review.
+
+### Latency Benchmark
+
+The latency benchmark measures forward-pass time using randomly initialized
+architecture instances under the same input length and batch size. It should be
+interpreted as an architecture-level inference-cost comparison.
+
+| Category | Model | Params | Device | Batch | ms/sample |
+|---|---|---:|---|---:|---:|
+| Deep Learning | Temporal CNN | 188,929 | cuda | 32 | **0.020** |
+| Proposed | Ours V1 | 158,594 | cuda | 32 | 0.242 |
+| SOTA | Lu official | 147,908 | cuda | 32 | 0.335 |
+| SOTA | ST-GCN | 252,097 | cuda | 32 | 0.522 |
+| SOTA | MotionAGFormer-XS | 2,307,324 | cuda | 32 | 1.937 |
+| SOTA | MotionBERT-Lite | 10,814,222 | cuda | 32 | 16.481 |
+
+Ours V1 is not the fastest model overall because Temporal CNN is much simpler,
+but it is faster than Lu official, ST-GCN, MotionAGFormer-XS, and
+MotionBERT-Lite while achieving the best MAE in the main GroupKFold
+comparison.
 
 ## Ours V1 A/B/C/D Ablation
 
