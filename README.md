@@ -51,12 +51,9 @@ RGB camera
 Bokyung Kim, Hieyong Jeong, Md Ilias Bappi, Kyungbaek Kim
 Chonnam National University, Gwangju, Republic of Korea
 
-**Target journal**
-EWSA
 
 **Manuscript positioning**
-The manuscript is framed as an expert decision-support system: it converts
-single-camera gait video into privacy-preserving skeletal features, estimates
+The manuscript converts single-camera gait video into privacy-preserving skeletal features, estimates
 MDS-UPDRS gait severity with bounded regression, and reports transparent
 ablation, robustness, calibration-style, cross-dataset, and failure-mode
 analyses for clinical deployment.
