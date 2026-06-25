@@ -8,7 +8,7 @@
   <img alt="Python" src="https://img.shields.io/badge/Python-3.9%2B-3776AB?style=for-the-badge&logo=python&logoColor=white">
   <img alt="PyTorch" src="https://img.shields.io/badge/PyTorch-2.x-EE4C2C?style=for-the-badge&logo=pytorch&logoColor=white">
   <img alt="CUDA" src="https://img.shields.io/badge/CUDA-GPU%20Ready-76B900?style=for-the-badge&logo=nvidia&logoColor=white">
-  <img alt="Target Journal" src="https://img.shields.io/badge/Target-EWSA-4B5563?style=for-the-badge">
+
 </p>
 
 <p>
